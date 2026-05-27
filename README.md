@@ -2,6 +2,10 @@
 
 Teleoperable Franka Panda robot arm in [Genesis](https://github.com/Genesis-Embodied-AI/genesis-world) with a live ultrasound feed from [raysim](https://github.com/isaac-for-healthcare/i4h-sensor-simulation) — an NVIDIA OptiX-based GPU raytracing ultrasound simulator — scanning an i4h ABDPhantom abdominal body model.
 
+
+https://github.com/user-attachments/assets/56157d4c-f88d-4a47-b10c-1672e9d224d1
+
+
 ## What it does
 
 - Loads the **i4h ABDPhantom** (full abdominal body with 14 organ meshes) as a fixed rigid body in a Genesis physics scene
