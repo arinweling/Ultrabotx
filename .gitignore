@@ -1,0 +1,8 @@
+# Downloaded assets (large binary, not source)
+src/panda_assembly.usda
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
