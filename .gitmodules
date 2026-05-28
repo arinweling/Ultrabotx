@@ -7,3 +7,4 @@
 [submodule "i4h-sensor-simulation"]
 	path = i4h-sensor-simulation
 	url = https://github.com/isaac-for-healthcare/i4h-sensor-simulation.git
+	ignore = dirty
