@@ -117,6 +117,23 @@ else
     info "raysim built successfully"
 fi
 
+# ── omniverse-kit (USD baking for Genesis) ────────────────────────────────────
+section "omniverse-kit (USD baking)"
+if conda run -n "$ENV_NAME" python -c "import omni" >/dev/null 2>&1; then
+    info "omniverse-kit already installed"
+else
+    info "Installing omniverse-kit..."
+    conda run -n "$ENV_NAME" pip install --extra-index-url https://pypi.nvidia.com omniverse-kit
+fi
+
+for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    if [ -f "$RC" ] && ! grep -q 'OMNI_KIT_ACCEPT_EULA' "$RC"; then
+        echo 'export OMNI_KIT_ACCEPT_EULA=yes' >> "$RC"
+        info "Added OMNI_KIT_ACCEPT_EULA=yes to $RC"
+    fi
+done
+export OMNI_KIT_ACCEPT_EULA=yes
+
 # ── OpenCV ────────────────────────────────────────────────────────────────────
 section "OpenCV"
 if conda run -n "$ENV_NAME" python -c "import cv2" >/dev/null 2>&1; then
@@ -124,6 +141,13 @@ if conda run -n "$ENV_NAME" python -c "import cv2" >/dev/null 2>&1; then
 else
     conda run -n "$ENV_NAME" pip install opencv-python
 fi
+
+# ── Symlink panda MJCF assets so custom XML can use relative meshdir ─────────
+section "Panda MJCF asset symlink"
+GENESIS_PANDA_ASSETS=$(conda run -n "$ENV_NAME" python -c \
+    "import genesis, os; print(os.path.join(os.path.dirname(genesis.__file__), 'assets', 'xml', 'franka_emika_panda', 'assets'))")
+ln -sfn "$GENESIS_PANDA_ASSETS" "$REPO_DIR/xml/franka_emika_panda/assets"
+info "assets → $GENESIS_PANDA_ASSETS"
 
 # ── Download ABDPhantom assets ────────────────────────────────────────────────
 section "ABDPhantom assets"

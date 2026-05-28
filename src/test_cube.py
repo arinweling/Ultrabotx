@@ -50,39 +50,51 @@ def _quat_wxyz_to_euler_xyz(quat_wxyz):
 
 # --- raysim world setup ------------------------------------------------------
 
+_CUBE_OBJ_PATH   = "/tmp/raysim_cube.obj"
+_CUBE_HALF_X_MM  = 50.0   # half-extents of calibration cuboid in raysim mm
+_CUBE_HALF_Y_MM  = 50.0
+_CUBE_HALF_Z_MM  = 1.0    # 2 mm total height
+
 # Probe sensor tip offset in probe body frame (metres): X, Y, Z
-PROBE_TCP_OFFSET_M = np.array([0.0, 0.0, 0.05])
-
-_ORGAN_MATERIALS = {
-    "Liver.obj":        "liver",
-    "Kidney.obj":       "muscle",
-    "Gallbladder.obj":  "water",
-    "Pancreas.obj":     "muscle",
-    "Colon.obj":        "muscle",
-    "Small_bowel.obj":  "muscle",
-    "Stomach.obj":      "muscle",
-    "Heart.obj":        "muscle",
-    "Bone.obj":         "bone",
-    "Back_muscles.obj": "muscle",
-    "Spleen.obj":       "muscle",
-    "Vessels.obj":      "blood",
-    "Tumor1.obj":       "liver",
-    "Tumor2.obj":       "liver",
-}
+PROBE_TCP_OFFSET_M = np.array([0.0, 0.025, 0.136])
 
 
-def build_raysim_world(organ_dir):
+def _write_cube_obj(path, hx, hy, hz):
+    """Write a cuboid OBJ with per-face normals (required by raysim)."""
+    # 8 vertices, 6 face normals, 12 triangles (2 per face)
+    lines = [
+        "# calibration cuboid\n",
+        f"v -{hx} -{hy} -{hz}\n", f"v  {hx} -{hy} -{hz}\n",
+        f"v  {hx}  {hy} -{hz}\n", f"v -{hx}  {hy} -{hz}\n",
+        f"v -{hx} -{hy}  {hz}\n", f"v  {hx} -{hy}  {hz}\n",
+        f"v  {hx}  {hy}  {hz}\n", f"v -{hx}  {hy}  {hz}\n",
+        "vn  0  0 -1\n", "vn  0  0  1\n",
+        "vn  0 -1  0\n", "vn  0  1  0\n",
+        "vn -1  0  0\n", "vn  1  0  0\n",
+        # -Z face
+        "f 1//1 3//1 2//1\n", "f 1//1 4//1 3//1\n",
+        # +Z face
+        "f 5//2 6//2 7//2\n", "f 5//2 7//2 8//2\n",
+        # -Y face
+        "f 1//3 2//3 6//3\n", "f 1//3 6//3 5//3\n",
+        # +Y face
+        "f 4//4 7//4 3//4\n", "f 4//4 8//4 7//4\n",
+        # -X face
+        "f 1//5 5//5 8//5\n", "f 1//5 8//5 4//5\n",
+        # +X face
+        "f 2//6 3//6 7//6\n", "f 2//6 7//6 6//6\n",
+    ]
+    with open(path, "w") as f:
+        f.writelines(lines)
+
+
+def build_raysim_cube():
+    _write_cube_obj(_CUBE_OBJ_PATH, _CUBE_HALF_X_MM, _CUBE_HALF_Y_MM, _CUBE_HALF_Z_MM)
     materials = rs.Materials()
     world = rs.World("water")
-    loaded = []
-    for obj_name, mat_name in _ORGAN_MATERIALS.items():
-        obj_path = os.path.join(organ_dir, obj_name)
-        if not os.path.exists(obj_path):
-            continue
-        mat_idx = materials.get_index(mat_name)
-        world.add(rs.Mesh(obj_path, mat_idx))
-        loaded.append(obj_name)
-    print(f"raysim meshes: {', '.join(loaded)}")
+    mat_idx = materials.get_index("muscle")
+    world.add(rs.Mesh(_CUBE_OBJ_PATH, mat_idx))
+    print(f"raysim cuboid: {_CUBE_HALF_X_MM*2:.0f}x{_CUBE_HALF_Y_MM*2:.0f}x{_CUBE_HALF_Z_MM*2:.0f}mm at raysim origin")
     return world, materials
 
 
@@ -97,23 +109,14 @@ def main():
     args = parser.parse_args()
 
     local_dir = get_i4h_local_asset_path()
-    phantom_path = os.path.join(local_dir, "Props", "ABDPhantom", "phantom.usda")
-    if not os.path.exists(phantom_path):
-        raise FileNotFoundError(f"phantom.usda not found at {phantom_path}. Run download_phantom.py first.")
 
     # Coordinate systems
     # -----------------
     # Genesis : metres, Z-up, origin at world floor centre.
-    # raysim  : millimetres, same Z-up axes, origin at the phantom USD local origin.
-    #
-    # The phantom USD (metersPerUnit=1, geometry scale=0.003) is centred at its
-    # local (0,0,0).  The raysim OBJ organs share the same origin.  Their combined
-    # bounding box in raysim mm is approximately:
-    #   X [-133, +160]  Y [-91, +107]  Z [-121, +162]
-    # Setting PHANTOM_POS_M.z = 0.121 places the bottom of the organs (Z = -121 mm)
-    # exactly on the Genesis ground plane (z = 0).
-    PHANTOM_POS_M = np.array([0.5, 0.0, 0.121])   # where phantom USD is placed in Genesis
-    RS_ORIGIN_M   = PHANTOM_POS_M                  # raysim (0,0,0) in Genesis metres
+    # raysim  : millimetres, same Z-up axes, origin at RS_ORIGIN_M (cube centre).
+    CUBE_HALF_M   = np.array([_CUBE_HALF_X_MM, _CUBE_HALF_Y_MM, _CUBE_HALF_Z_MM]) / 1000.0
+    CUBE_POS_M    = np.array([0.5, 0.0, 0.30])  # cuboid centre, suspended in air
+    RS_ORIGIN_M   = CUBE_POS_M                   # raysim (0,0,0) in Genesis metres
 
     # (kept for reference — probe face now comes from the MJCF probe_link body)
     # PROBE_FACE_OFFSET_M    = 0.08
@@ -128,8 +131,7 @@ def main():
     gs.init(backend=gs.cpu if args.cpu else gs.gpu, logging_level="warning")
 
     # --- raysim setup (after gs.init so both share the same CUDA context) -----
-    organ_dir = os.path.join(local_dir, "Props", "ABDPhantom", "Organs")
-    rs_world, rs_materials = build_raysim_world(organ_dir)
+    rs_world, rs_materials = build_raysim_cube()
     rs_simulator = rs.RaytracingUltrasoundSimulator(rs_world, rs_materials)
 
     rs_sim_params = rs.SimParams()
@@ -164,17 +166,17 @@ def main():
         morph=gs.morphs.MJCF(file="/home/arin/Ultrabotx/xml/franka_emika_panda/panda_with_probe.xml"),
     )
 
-    phantom_texture_path = os.path.join(local_dir, "Props", "ABDPhantom", "SubUSDs", "textures", "sample_texture0.png")
-    phantom_surface = gs.surfaces.Default(
-        diffuse_texture=gs.textures.ImageTexture(image_path=phantom_texture_path)
+    # Calibration cube — fixed, raysim cube is centred at RS_ORIGIN_M
+    cube_entity = scene.add_entity(
+        material=gs.materials.Rigid(),
+        morph=gs.morphs.Box(
+            size=tuple(CUBE_HALF_M * 2),
+            pos=CUBE_POS_M,
+            fixed=True,
+        ),
+        surface=gs.surfaces.Default(color=(0.8, 0.2, 0.2, 1.0)),
     )
-
-    # Phantom fixed — raysim meshes are in OBJ mm coords relative to RS_ORIGIN_M
-    phantom_entities = scene.add_stage(
-        gs.morphs.USD(file=phantom_path, pos=PHANTOM_POS_M, fixed=True),
-        surface=phantom_surface,
-    )
-    print(f"Loaded phantom: {len(phantom_entities)} entity/entities")
+    print(f"Calibration cuboid: {CUBE_HALF_M*2*1000} mm at {CUBE_POS_M}")
 
     probe_usd_path = os.path.join(local_dir, "Props", "ClariusUltrasoundProbe", "fixture_nomtl.usda")
     probe = scene.add_entity(
@@ -254,6 +256,9 @@ def main():
             )
             robot.control_dofs_position(q, motors_dof)
             scene.step()
+
+            hand_pos = ee_link.get_pos().cpu().numpy()
+            print(f"\ree_link  x={hand_pos[0]:.4f}  y={hand_pos[1]:.4f}  z={hand_pos[2]:.4f}", end="", flush=True)
 
             probe_body_m  = probe_link.get_pos().cpu().numpy()
             probe_face_q  = probe_link.get_quat().cpu().numpy()
