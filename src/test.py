@@ -51,7 +51,7 @@ def _quat_wxyz_to_euler_xyz(quat_wxyz):
 # --- raysim world setup ------------------------------------------------------
 
 # Probe sensor tip offset in probe body frame (metres): X, Y, Z
-PROBE_TCP_OFFSET_M = np.array([0.0, 0.0, 0.05])
+PROBE_TCP_OFFSET_M = np.array([0.0, 0.025, 0.136])
 
 _ORGAN_MATERIALS = {
     "Liver.obj":        "liver",
