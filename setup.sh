@@ -27,17 +27,17 @@ DRIVER_VERSION=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | h
 info "NVIDIA driver: $DRIVER_VERSION"
 info "Repo root:     $REPO_DIR"
 
-# ── submodules ────────────────────────────────────────────────────────────────
-section "Initialising submodules"
-git -C "$REPO_DIR" submodule update --init --recursive
-info "Submodules ready"
+# # ── submodules ────────────────────────────────────────────────────────────────
+# section "Initialising submodules"
+# git -C "$REPO_DIR" submodule update --init --recursive
+# info "Submodules ready"
 
 # ── conda environment ─────────────────────────────────────────────────────────
 section "Conda environment: $ENV_NAME"
 if conda env list | grep -q "^${ENV_NAME} "; then
     info "Environment '$ENV_NAME' already exists — skipping creation"
 else
-    conda create -n "$ENV_NAME" python=3.11 libstdcxx-ng -c conda-forge -y
+    conda create -n "$ENV_NAME" python=3.11 pip libstdcxx-ng -c conda-forge -y
     info "Environment '$ENV_NAME' created"
 fi
 
@@ -58,14 +58,23 @@ else
     conda install -n "$ENV_NAME" -c conda-forge ninja -y
 fi
 
+# ── Taichi ───────────────────────────────────────────────────────────────────
+section "Taichi"
+if conda run -n "$ENV_NAME" python -c "import taichi" >/dev/null 2>&1; then
+    info "Taichi already installed"
+else
+    info "Installing Taichi..."
+    conda run -n "$ENV_NAME" pip install taichi
+fi
+
 # ── Genesis ───────────────────────────────────────────────────────────────────
 section "Genesis physics engine"
 GENESIS_DIR="$REPO_DIR/genesis-world"
 if conda run -n "$ENV_NAME" python -c "import genesis" >/dev/null 2>&1; then
     info "Genesis already installed"
 else
-    info "Installing Genesis from $GENESIS_DIR ..."
-    conda run -n "$ENV_NAME" pip install -e "$GENESIS_DIR"
+    info "Installing Genesis from PyPI ..."
+    conda run -n "$ENV_NAME" pip install "genesis-world[usd]"
 fi
 
 # ── i4h asset helper ──────────────────────────────────────────────────────────
@@ -86,6 +95,12 @@ SO_FILE=$(find "$RAYSIM_DIR/raysim" -name "ray_sim_python*.so" 2>/dev/null | hea
 if [ -n "$SO_FILE" ]; then
     info "raysim already built: $SO_FILE"
 else
+    MATERIAL_HPP="$RAYSIM_DIR/include/raysim/core/material.hpp"
+    if ! grep -q '#include <cstdint>' "$MATERIAL_HPP"; then
+        info "Patching material.hpp: adding #include <cstdint>"
+        sed -i 's/#include <memory>/#include <cstdint>\n#include <memory>/' "$MATERIAL_HPP"
+    fi
+
     info "Configuring raysim with CMake..."
     PYTHON_BIN=$(conda run -n "$ENV_NAME" which python)
     conda run -n "$ENV_NAME" cmake \
@@ -100,14 +115,6 @@ else
     info "Building raysim (this takes a few minutes)..."
     conda run -n "$ENV_NAME" cmake --build "$RAYSIM_DIR/build-release" -j"$(nproc)"
     info "raysim built successfully"
-fi
-
-# ── PyMUST (fallback CPU ultrasound simulator) ────────────────────────────────
-section "PyMUST"
-if conda run -n "$ENV_NAME" python -c "import pymust" >/dev/null 2>&1; then
-    info "PyMUST already installed"
-else
-    conda run -n "$ENV_NAME" pip install pymust
 fi
 
 # ── OpenCV ────────────────────────────────────────────────────────────────────
