@@ -45,7 +45,24 @@ git clone --recurse-submodules https://github.com/<your-username>/genesis_testin
 cd genesis_testing
 ```
 
-### 2. Run the setup script
+### 2. Download assets
+
+The robot and phantom assets are hosted on Hugging Face. Download and extract them into the `assets/` folder at the repo root:
+
+```bash
+# Using the Hugging Face CLI (pip install huggingface_hub if needed)
+huggingface-cli download yunkao/SonoGym_assets_models \
+  --repo-type dataset \
+  --local-dir assets
+
+# Or download manually from:
+# https://huggingface.co/datasets/yunkao/SonoGym_assets_models/tree/main
+# and place the contents into the assets/ directory
+```
+
+The `assets/` directory is gitignored — its contents are not committed to the repo.
+
+### 3. Run the setup script
 
 ```bash
 bash setup.sh
@@ -150,6 +167,7 @@ gs.init(backend=gs.gpu)
 | `genesis-world` | Physics simulation engine | [Genesis-Embodied-AI/genesis-world](https://github.com/Genesis-Embodied-AI/genesis-world) |
 | `i4h-asset-catalog` | Asset download helpers | [isaac-for-healthcare/i4h-asset-catalog](https://github.com/isaac-for-healthcare/i4h-asset-catalog) |
 | `i4h-sensor-simulation` | raysim OptiX ultrasound simulator | [isaac-for-healthcare/i4h-sensor-simulation](https://github.com/isaac-for-healthcare/i4h-sensor-simulation) |
+| `i4h-workflows` | i4H reference workflows | [isaac-for-healthcare/i4h-workflows](https://github.com/isaac-for-healthcare/i4h-workflows) |
 
 ## Known issues
 

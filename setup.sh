@@ -41,6 +41,10 @@ else
     info "Environment '$ENV_NAME' created"
 fi
 
+ENV_PIP="$(conda info --base)/envs/${ENV_NAME}/bin/pip"
+[ -x "$ENV_PIP" ] || die "Cannot find pip in conda env '${ENV_NAME}': $ENV_PIP"
+info "Using pip: $ENV_PIP"
+
 # ── nvcc (needed to build raysim) ─────────────────────────────────────────────
 section "CUDA compiler (nvcc)"
 if conda run -n "$ENV_NAME" nvcc --version >/dev/null 2>&1; then
@@ -64,17 +68,23 @@ if conda run -n "$ENV_NAME" python -c "import taichi" >/dev/null 2>&1; then
     info "Taichi already installed"
 else
     info "Installing Taichi..."
-    conda run -n "$ENV_NAME" pip install taichi
+    "$ENV_PIP" install taichi
 fi
 
 # ── Genesis ───────────────────────────────────────────────────────────────────
 section "Genesis physics engine"
 GENESIS_DIR="$REPO_DIR/genesis-world"
-if conda run -n "$ENV_NAME" python -c "import genesis" >/dev/null 2>&1; then
-    info "Genesis already installed"
+# Remove any non-editable stub that would shadow the editable install
+GENESIS_STUB="$(conda run -n "$ENV_NAME" python -c "import sys; print(next((p for p in sys.path if p.endswith('site-packages')), ''))")/genesis"
+if [ -d "$GENESIS_STUB" ] && [ ! -f "$GENESIS_STUB/__init__.py" ]; then
+    warn "Removing non-editable Genesis stub at $GENESIS_STUB"
+    rm -rf "$GENESIS_STUB"
+fi
+if conda run -n "$ENV_NAME" python -c "import genesis; assert genesis.__file__" >/dev/null 2>&1; then
+    info "Genesis already installed (editable)"
 else
-    info "Installing Genesis from PyPI ..."
-    conda run -n "$ENV_NAME" pip install "genesis-world[usd]"
+    info "Installing Genesis in editable mode from $GENESIS_DIR ..."
+    "$ENV_PIP" install -e "$GENESIS_DIR"[usd]
 fi
 
 # ── i4h asset helper ──────────────────────────────────────────────────────────
@@ -84,7 +94,7 @@ if conda run -n "$ENV_NAME" python -c "from i4h_asset_helper.assets import get_i
     info "i4h_asset_helper already installed"
 else
     info "Installing i4h_asset_helper..."
-    conda run -n "$ENV_NAME" pip install -e "$CATALOG_DIR"
+    "$ENV_PIP" install -e "$CATALOG_DIR"
 fi
 
 # ── raysim (OptiX ultrasound simulator) ───────────────────────────────────────
@@ -123,7 +133,7 @@ if conda run -n "$ENV_NAME" python -c "import omni" >/dev/null 2>&1; then
     info "omniverse-kit already installed"
 else
     info "Installing omniverse-kit..."
-    conda run -n "$ENV_NAME" pip install --extra-index-url https://pypi.nvidia.com omniverse-kit
+    "$ENV_PIP" install --extra-index-url https://pypi.nvidia.com omniverse-kit
 fi
 
 for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
@@ -139,7 +149,7 @@ section "OpenCV"
 if conda run -n "$ENV_NAME" python -c "import cv2" >/dev/null 2>&1; then
     info "OpenCV already installed"
 else
-    conda run -n "$ENV_NAME" pip install opencv-python
+    "$ENV_PIP" install opencv-python
 fi
 
 # ── Symlink panda MJCF assets so custom XML can use relative meshdir ─────────
@@ -149,20 +159,66 @@ GENESIS_PANDA_ASSETS=$(conda run -n "$ENV_NAME" python -c \
 ln -sfn "$GENESIS_PANDA_ASSETS" "$REPO_DIR/xml/franka_emika_panda/assets"
 info "assets → $GENESIS_PANDA_ASSETS"
 
-# ── Download ABDPhantom assets ────────────────────────────────────────────────
-section "ABDPhantom assets"
-PHANTOM_CHECK=$(conda run -n "$ENV_NAME" python -c "
+# ── Download required i4h assets ──────────────────────────────────────────────
+section "i4h assets (ABDPhantom + ClariusUltrasoundProbe)"
+conda run -n "$ENV_NAME" python - << 'PYEOF'
+from i4h_asset_helper.assets import (
+    _get_s3_client, _get_asset_env, _S3_BUCKETS,
+    get_i4h_local_asset_path, get_i4h_asset_hash, get_i4h_asset_version,
+)
+import os
+
+bucket  = _S3_BUCKETS[_get_asset_env()]
+s3      = _get_s3_client()
+local   = get_i4h_local_asset_path()
+ver     = get_i4h_asset_version()
+h       = get_i4h_asset_hash(version=ver)
+prefix  = f"Assets/Isaac/Healthcare/{ver}/{h}/"
+
+needed = [
+    "Props/ABDPhantom/",
+    "Props/ClariusUltrasoundProbe/fixture.usda",
+]
+
+paginator = s3.get_paginator("list_objects_v2")
+for np_ in needed:
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix + np_):
+        for obj in page.get("Contents", []):
+            rel  = obj["Key"][len(prefix):]
+            dest = os.path.join(local, rel)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            if not os.path.exists(dest):
+                print(f"Downloading {rel}")
+                s3.download_file(bucket, obj["Key"], dest)
+print("i4h assets ready")
+PYEOF
+
+# Regenerate fixture_nomtl.usda (MDL materials stripped, needed by Genesis)
+NOMTL_CHECK=$(conda run -n "$ENV_NAME" python -c "
 from i4h_asset_helper.assets import get_i4h_local_asset_path
 import os
-p = os.path.join(get_i4h_local_asset_path(), 'Props', 'ABDPhantom', 'phantom.usda')
+p = os.path.join(get_i4h_local_asset_path(), 'Props', 'ClariusUltrasoundProbe', 'fixture_nomtl.usda')
 print('ok' if os.path.exists(p) else 'missing')
 " 2>/dev/null || echo "missing")
 
-if [ "$PHANTOM_CHECK" = "ok" ]; then
-    info "ABDPhantom assets already downloaded"
+if [ "$NOMTL_CHECK" = "ok" ]; then
+    info "fixture_nomtl.usda already exists"
 else
-    info "Downloading ABDPhantom assets (~500 MB)..."
-    conda run -n "$ENV_NAME" python "$REPO_DIR/src/download_phantom.py"
+    info "Generating fixture_nomtl.usda (stripping MDL materials)..."
+    conda run -n "$ENV_NAME" python - << 'PYEOF'
+from i4h_asset_helper.assets import get_i4h_local_asset_path
+from pxr import Usd
+import os
+local = get_i4h_local_asset_path()
+src = os.path.join(local, "Props", "ClariusUltrasoundProbe", "fixture.usda")
+dst = os.path.join(local, "Props", "ClariusUltrasoundProbe", "fixture_nomtl.usda")
+stage = Usd.Stage.Open(src)
+to_remove = [p.GetPath() for p in stage.Traverse() if p.GetTypeName() == "Material"]
+for path in to_remove:
+    stage.RemovePrim(path)
+stage.Export(dst)
+print(f"fixture_nomtl.usda written to {dst}")
+PYEOF
 fi
 
 # ── done ──────────────────────────────────────────────────────────────────────

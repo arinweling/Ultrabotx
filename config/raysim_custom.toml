@@ -1,0 +1,38 @@
+# raysim simulation configuration
+# All distances in mm, angles in degrees, frequency in MHz
+
+[probe]
+# Probe type: "curvilinear" | "linear" | "phased"
+type            = "curvilinear"
+num_elements_x  = 256
+sector_angle    = 73.0      # degrees — sweep angle of the scan fan
+radius          = 45.0      # mm — curvature radius (curvilinear only)
+width           = 60.0      # mm — aperture width (linear/phased only)
+frequency       = 2.5       # MHz — higher = finer axial res, less penetration
+speed_of_sound  = 1.54      # mm/µs — assumed SoS for depth mapping
+pulse_duration  = 2.0       # cycles — longer = worse axial resolution
+
+[sim]
+t_far              = 150.0  # mm — maximum imaging depth
+buffer_size        = 4096   # samples per A-line
+max_depth          = 15     # maximum ray reflection bounces
+min_intensity      = 1e-3   # intensity cutoff below which ray is killed
+use_scattering     = true   # simulate tissue speckle scattering
+conv_psf           = true   # convolve with PSF for realistic beam blur
+median_clip_filter = false  # post-process speckle reduction on B-mode
+b_mode_width       = 400    # output image width (pixels)
+b_mode_height      = 400    # output image height (pixels)
+contact_epsilon    = 0.0    # mm — max distance for element activation (0 = always active)
+
+[world]
+# Genesis position of phantom origin [x, y, z] in metres
+# phantom_pos = [0.5, 0.0, 0.121]
+# phantom_pos = [0.0, 0.0, 0.0]
+phantom_pos = [0.6, 0.0, 0.09]
+# XYZ Euler angles (degrees) applied to organ OBJs in both raysim and Genesis
+# organ_euler_deg = [-90, 0, 0]
+organ_euler_deg = [-90, 0, 180]
+
+[sensor]
+# Offset from probe link origin to transducer face in probe-local frame (metres)
+tcp_offset_m = [0.0, 0.025, 0.136]

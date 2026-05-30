@@ -8,6 +8,10 @@ n  - Move end-effector up
 m  - Move end-effector down
 j  - Rotate end-effector counterclockwise
 k  - Rotate end-effector clockwise
+[  - Decrease scan depth  (-10 mm)
+]  - Increase scan depth  (+10 mm)
+,  - Decrease probe frequency (-0.5 MHz)
+.  - Increase probe frequency (+0.5 MHz)
 \\ - Reset robot pose
 esc - Quit
 
@@ -18,6 +22,7 @@ import argparse
 import os
 import re
 import sys
+import tomllib
 
 import cv2
 import numpy as np
@@ -25,6 +30,12 @@ import genesis as gs
 import genesis.utils.geom as gu
 from genesis.vis.keybindings import Key, KeyAction, Keybind
 from i4h_asset_helper.assets import get_i4h_local_asset_path
+
+_REPO_ROOT  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_CONFIG_PATH = os.path.join(_REPO_ROOT, "config", "raysim_custom.toml")
+
+with open(_CONFIG_PATH, "rb") as _f:
+    _CFG = tomllib.load(_f)
 
 # raysim is built inside the ultrasound-raytracing repo; add it to the path
 _RAYSIM_ROOT = os.path.join(
@@ -40,7 +51,6 @@ import raysim.cuda as rs
 # --- Coordinate helpers ------------------------------------------------------
 
 def _quat_wxyz_to_euler_xyz(quat_wxyz):
-    """Convert wxyz quaternion to XYZ Euler angles (radians)."""
     R = gu.quat_to_R(quat_wxyz)
     ry = np.arctan2(-R[2, 0], np.sqrt(R[2, 1] ** 2 + R[2, 2] ** 2))
     rx = np.arctan2(R[2, 1] / np.cos(ry), R[2, 2] / np.cos(ry))
@@ -50,25 +60,58 @@ def _quat_wxyz_to_euler_xyz(quat_wxyz):
 
 # --- raysim world setup ------------------------------------------------------
 
-# Probe sensor tip offset in probe body frame (metres): X, Y, Z
-PROBE_TCP_OFFSET_M = np.array([0.0, 0.025, 0.136])
+PROBE_TCP_OFFSET_M = np.array(_CFG["sensor"]["tcp_offset_m"])
+
+def _euler_deg_to_R(ex, ey, ez):
+    rx, ry, rz = np.radians(ex), np.radians(ey), np.radians(ez)
+    Rx = np.array([[1,0,0],[0,np.cos(rx),-np.sin(rx)],[0,np.sin(rx),np.cos(rx)]])
+    Ry = np.array([[np.cos(ry),0,np.sin(ry)],[0,1,0],[-np.sin(ry),0,np.cos(ry)]])
+    Rz = np.array([[np.cos(rz),-np.sin(rz),0],[np.sin(rz),np.cos(rz),0],[0,0,1]])
+    return Rz @ Ry @ Rx
+
+US_SCAN_DEPTH_MM = _CFG["sim"]["t_far"]
 
 _ORGAN_MATERIALS = {
-    "Liver.obj":        "liver",
+    # "Liver.obj":        "liver",
     "Kidney.obj":       "muscle",
-    "Gallbladder.obj":  "water",
-    "Pancreas.obj":     "muscle",
-    "Colon.obj":        "muscle",
-    "Small_bowel.obj":  "muscle",
-    "Stomach.obj":      "muscle",
+    # "Gallbladder.obj":  "water",
+    # "Pancreas.obj":     "muscle",
+    # "Colon.obj":        "muscle",
+    # "Small_bowel.obj":  "muscle",
+    # "Stomach.obj":      "muscle",
     "Heart.obj":        "muscle",
     "Bone.obj":         "bone",
-    "Back_muscles.obj": "muscle",
-    "Spleen.obj":       "muscle",
-    "Vessels.obj":      "blood",
-    "Tumor1.obj":       "liver",
-    "Tumor2.obj":       "liver",
+    # "Back_muscles.obj": "muscle",
+    # "Spleen.obj":       "muscle",
+    # "Vessels.obj":      "blood",
+    # "Tumor1.obj":       "liver",
+    # "Tumor2.obj":       "liver",
+    # "Lungs.obj":        "muscle",
+    # "Skin.obj":         "muscle",
 }
+
+# Colours for Genesis viewer (RGB, medical convention)
+_ORGAN_COLORS = {
+    # "Liver.obj":        (0.50, 0.08, 0.08),
+    "Kidney.obj":       (0.75, 0.18, 0.12),
+    # "Gallbladder.obj":  (0.40, 0.62, 0.10),
+    # "Pancreas.obj":     (0.90, 0.60, 0.55),
+    # "Colon.obj":        (0.80, 0.50, 0.40),
+    # "Small_bowel.obj":  (0.88, 0.68, 0.58),
+    # "Stomach.obj":      (0.82, 0.55, 0.50),
+    "Heart.obj":        (0.85, 0.08, 0.08),
+    "Bone.obj":         (0.92, 0.88, 0.78),
+    # "Back_muscles.obj": (0.60, 0.12, 0.12),
+    # "Spleen.obj":       (0.45, 0.08, 0.18),
+    # "Vessels.obj":      (0.55, 0.03, 0.08),
+    # "Tumor1.obj":       (0.85, 0.82, 0.10),
+    # "Tumor2.obj":       (0.85, 0.82, 0.10),
+    # "Lungs.obj":        (0.90, 0.70, 0.65),
+    # "Skin.obj":         (0.88, 0.72, 0.58),
+}
+
+
+_ORGAN_EULER_DEG = tuple(_CFG["world"]["organ_euler_deg"])
 
 
 def build_raysim_world(organ_dir):
@@ -97,9 +140,6 @@ def main():
     args = parser.parse_args()
 
     local_dir = get_i4h_local_asset_path()
-    phantom_path = os.path.join(local_dir, "Props", "ABDPhantom", "phantom.usda")
-    if not os.path.exists(phantom_path):
-        raise FileNotFoundError(f"phantom.usda not found at {phantom_path}. Run download_phantom.py first.")
 
     # Coordinate systems
     # -----------------
@@ -112,7 +152,7 @@ def main():
     #   X [-133, +160]  Y [-91, +107]  Z [-121, +162]
     # Setting PHANTOM_POS_M.z = 0.121 places the bottom of the organs (Z = -121 mm)
     # exactly on the Genesis ground plane (z = 0).
-    PHANTOM_POS_M = np.array([0.5, 0.0, 0.121])   # where phantom USD is placed in Genesis
+    PHANTOM_POS_M = np.array(_CFG["world"]["phantom_pos"])  # where phantom USD is placed in Genesis
     RS_ORIGIN_M   = PHANTOM_POS_M                  # raysim (0,0,0) in Genesis metres
 
     # (kept for reference — probe face now comes from the MJCF probe_link body)
@@ -132,11 +172,49 @@ def main():
     rs_world, rs_materials = build_raysim_world(organ_dir)
     rs_simulator = rs.RaytracingUltrasoundSimulator(rs_world, rs_materials)
 
+    _s = _CFG["sim"]
     rs_sim_params = rs.SimParams()
-    rs_sim_params.conv_psf    = True
-    rs_sim_params.buffer_size = 4096
-    rs_sim_params.t_far       = 180.0
-    rs_sim_params.b_mode_size = (400, 400)
+    rs_sim_params.t_far              = _s["t_far"]
+    rs_sim_params.buffer_size        = _s["buffer_size"]
+    rs_sim_params.max_depth          = _s["max_depth"]
+    rs_sim_params.min_intensity      = _s["min_intensity"]
+    rs_sim_params.use_scattering     = _s["use_scattering"]
+    rs_sim_params.conv_psf           = _s["conv_psf"]
+    rs_sim_params.median_clip_filter = _s["median_clip_filter"]
+    rs_sim_params.b_mode_size        = (_s["b_mode_width"], _s["b_mode_height"])
+    rs_sim_params.contact_epsilon    = _s["contact_epsilon"]
+
+    _p = _CFG["probe"]
+    _probe_type = _p["type"]
+    if _probe_type == "curvilinear":
+        rs_probe_template = rs.CurvilinearProbe(
+            num_elements_x=_p["num_elements_x"],
+            sector_angle=_p["sector_angle"],
+            radius=_p["radius"],
+            frequency=_p["frequency"],
+            speed_of_sound=_p["speed_of_sound"],
+            pulse_duration=_p["pulse_duration"],
+        )
+    elif _probe_type == "linear":
+        rs_probe_template = rs.LinearArrayProbe(
+            num_elements_x=_p["num_elements_x"],
+            width=_p["width"],
+            frequency=_p["frequency"],
+            speed_of_sound=_p["speed_of_sound"],
+            pulse_duration=_p["pulse_duration"],
+        )
+    elif _probe_type == "phased":
+        rs_probe_template = rs.PhasedArrayProbe(
+            num_elements_x=_p["num_elements_x"],
+            width=_p["width"],
+            sector_angle=_p["sector_angle"],
+            frequency=_p["frequency"],
+            speed_of_sound=_p["speed_of_sound"],
+            pulse_duration=_p["pulse_duration"],
+        )
+    else:
+        raise ValueError(f"Unknown probe type in config: {_probe_type!r}")
+    print(f"Probe: {_probe_type}, {_p['num_elements_x']} elements, {_p['frequency']} MHz")
     np.set_printoptions(precision=7, suppress=True)
 
     scene = gs.Scene(
@@ -164,17 +242,32 @@ def main():
         morph=gs.morphs.MJCF(file="/home/arin/Ultrabotx/xml/franka_emika_panda/panda_with_probe.xml"),
     )
 
-    phantom_texture_path = os.path.join(local_dir, "Props", "ABDPhantom", "SubUSDs", "textures", "sample_texture0.png")
-    phantom_surface = gs.surfaces.Default(
-        diffuse_texture=gs.textures.ImageTexture(image_path=phantom_texture_path)
-    )
+    # Phantom outer skin (USD)
+    phantom_path = os.path.join(local_dir, "Props", "ABDPhantom", "phantom.usda")
 
-    # Phantom fixed — raysim meshes are in OBJ mm coords relative to RS_ORIGIN_M
-    phantom_entities = scene.add_stage(
-        gs.morphs.USD(file=phantom_path, pos=PHANTOM_POS_M, fixed=True),
-        surface=phantom_surface,
+    scene.add_stage(
+        gs.morphs.USD(file=phantom_path, pos=PHANTOM_POS_M, euler=(0, 0, 180), fixed=True)
     )
-    print(f"Loaded phantom: {len(phantom_entities)} entity/entities")
+    print("Loaded phantom skin (USD)")
+
+    # Individual organs as coloured meshes (OBJ in mm LPS coords → scale 0.001, euler 90° X)
+    organ_dir = os.path.join(local_dir, "Props", "ABDPhantom", "Organs")
+    for obj_name, color in _ORGAN_COLORS.items():
+        obj_path = os.path.join(organ_dir, obj_name)
+        if not os.path.exists(obj_path):
+            continue
+        scene.add_entity(
+            morph=gs.morphs.Mesh(
+                file=obj_path,
+                scale=0.001,
+                pos=PHANTOM_POS_M,
+                fixed=True,
+                euler=_ORGAN_EULER_DEG,
+                collision=False,
+            ),
+            surface=gs.surfaces.Default(color=color),
+        )
+    print(f"Loaded {sum(1 for n in _ORGAN_COLORS if os.path.exists(os.path.join(organ_dir, n)))} organs")
 
     probe_usd_path = os.path.join(local_dir, "Props", "ClariusUltrasoundProbe", "fixture_nomtl.usda")
     probe = scene.add_entity(
@@ -215,6 +308,17 @@ def main():
 
     reset_robot()
 
+    scan_depth_mm = [US_SCAN_DEPTH_MM]  # mutable so closures can modify it
+    ddepth = 10.0  # mm per keypress
+
+    probe_freq_mhz = [_CFG["probe"]["frequency"]]
+    dfreq = 0.5  # MHz per keypress
+
+    def change_freq(delta):
+        probe_freq_mhz[0] = max(1.0, min(20.0, probe_freq_mhz[0] + delta))
+        rs_probe_template.set_frequency(probe_freq_mhz[0])
+        print(f"\rUS freq: {probe_freq_mhz[0]:.1f} MHz    ", end="", flush=True)
+
     def move(delta):
         target_pos[:] += np.array(delta, dtype=gs.np_float)
 
@@ -223,6 +327,11 @@ def main():
             target_quat, gu.xyz_to_quat(np.array([0, 0, delta]))
         )
 
+    def change_depth(delta):
+        scan_depth_mm[0] = max(10.0, scan_depth_mm[0] + delta)
+        rs_sim_params.t_far = scan_depth_mm[0]
+        print(f"\rUS depth: {scan_depth_mm[0]:.0f} mm    ", end="", flush=True)
+
     is_running = True
 
     def stop():
@@ -230,16 +339,20 @@ def main():
         is_running = False
 
     scene.viewer.register_keybinds(
-        Keybind("move_forward",  Key.UP,        KeyAction.HOLD,    callback=move,           args=((-dpos, 0, 0),)),
-        Keybind("move_back",     Key.DOWN,       KeyAction.HOLD,    callback=move,           args=((dpos, 0, 0),)),
-        Keybind("move_left",     Key.LEFT,       KeyAction.HOLD,    callback=move,           args=((0, -dpos, 0),)),
-        Keybind("move_right",    Key.RIGHT,      KeyAction.HOLD,    callback=move,           args=((0, dpos, 0),)),
-        Keybind("move_up",       Key.N,          KeyAction.HOLD,    callback=move,           args=((0, 0, dpos),)),
-        Keybind("move_down",     Key.M,          KeyAction.HOLD,    callback=move,           args=((0, 0, -dpos),)),
-        Keybind("rotate_ccw",    Key.J,          KeyAction.HOLD,    callback=rotate,         args=(drot,)),
-        Keybind("rotate_cw",     Key.K,          KeyAction.HOLD,    callback=rotate,         args=(-drot,)),
-        Keybind("reset", Key.BACKSLASH, KeyAction.RELEASE, callback=reset_robot),
-        Keybind("quit",  Key.ESCAPE,   KeyAction.RELEASE, callback=stop),
+        Keybind("move_forward",  Key.UP,           KeyAction.HOLD,    callback=move,         args=((-dpos, 0, 0),)),
+        Keybind("move_back",     Key.DOWN,          KeyAction.HOLD,    callback=move,         args=((dpos, 0, 0),)),
+        Keybind("move_left",     Key.LEFT,          KeyAction.HOLD,    callback=move,         args=((0, -dpos, 0),)),
+        Keybind("move_right",    Key.RIGHT,         KeyAction.HOLD,    callback=move,         args=((0, dpos, 0),)),
+        Keybind("move_up",       Key.N,             KeyAction.HOLD,    callback=move,         args=((0, 0, dpos),)),
+        Keybind("move_down",     Key.M,             KeyAction.HOLD,    callback=move,         args=((0, 0, -dpos),)),
+        Keybind("rotate_ccw",    Key.J,             KeyAction.HOLD,    callback=rotate,       args=(drot,)),
+        Keybind("rotate_cw",     Key.K,             KeyAction.HOLD,    callback=rotate,       args=(-drot,)),
+        Keybind("depth_inc",     Key.BRACKETRIGHT, KeyAction.RELEASE, callback=change_depth, args=(ddepth,)),
+        Keybind("depth_dec",     Key.BRACKETLEFT,  KeyAction.RELEASE, callback=change_depth, args=(-ddepth,)),
+        Keybind("freq_inc", Key.PERIOD, KeyAction.RELEASE, callback=change_freq, args=(dfreq,)),
+        Keybind("freq_dec", Key.COMMA,  KeyAction.RELEASE, callback=change_freq, args=(-dfreq,)),
+        Keybind("reset",  Key.BACKSLASH, KeyAction.RELEASE, callback=reset_robot),
+        Keybind("quit",   Key.ESCAPE,   KeyAction.RELEASE, callback=stop),
     )
 
     # --- Simulation loop ------------------------------------------------------
@@ -267,19 +380,21 @@ def main():
             if _us_step % US_EVERY != 0:
                 continue
 
-            # Genesis → raysim: probe face position relative to phantom origin, scaled to mm.
-            pos_mm    = (probe_face_m - RS_ORIGIN_M) * 1000.0
-            euler_xyz = _quat_wxyz_to_euler_xyz(probe_face_q)
+            # OBJs are in raw LPS mm; Genesis loads them with _ORGAN_EULER_DEG applied.
+            # Transform probe from Genesis frame into the OBJ frame (inverse rotation).
+            R_gen2rs = _euler_deg_to_R(*_ORGAN_EULER_DEG).T
+            d      = (probe_face_m - RS_ORIGIN_M) * 1000.0
+            pos_mm = (R_gen2rs @ d).astype(np.float32)
 
-            rs_probe = rs.CurvilinearProbe(
-                rs.Pose(
-                    position=pos_mm.astype(np.float32),
-                    rotation=euler_xyz,
-                )
-            )
+            euler_xyz = _quat_wxyz_to_euler_xyz(gu.R_to_quat(R_gen2rs @ R_probe))
+
+            rs_probe_template.set_pose(rs.Pose(
+                position=pos_mm.astype(np.float32),
+                rotation=euler_xyz,
+            ))
 
             try:
-                bmode = rs_simulator.simulate(rs_probe, rs_sim_params)
+                bmode = rs_simulator.simulate(rs_probe_template, rs_sim_params)
                 # bmode is in dB (negative values); normalise to [0,255] for display
                 DR = 60.0
                 display = np.clip((bmode + DR) / DR, 0.0, 1.0)

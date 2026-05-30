@@ -166,15 +166,13 @@ def main():
         morph=gs.morphs.MJCF(file="/home/arin/Ultrabotx/xml/franka_emika_panda/panda_with_probe.xml"),
     )
 
-    # Calibration cube — fixed, raysim cube is centred at RS_ORIGIN_M
+    # Calibration cuboid — fixed, raysim cube is centred at RS_ORIGIN_M
     cube_entity = scene.add_entity(
-        material=gs.materials.Rigid(),
-        morph=gs.morphs.Box(
+        gs.morphs.Box(
             size=tuple(CUBE_HALF_M * 2),
             pos=CUBE_POS_M,
             fixed=True,
-        ),
-        surface=gs.surfaces.Default(color=(0.8, 0.2, 0.2, 1.0)),
+        )
     )
     print(f"Calibration cuboid: {CUBE_HALF_M*2*1000} mm at {CUBE_POS_M}")
 
