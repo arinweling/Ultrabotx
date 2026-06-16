@@ -95,44 +95,56 @@ def _euler_deg_to_R(ex, ey, ez):
 US_SCAN_DEPTH_MM = _CFG["sim"]["t_far"]
 
 _ORGAN_MATERIALS = {
-    # "Liver.obj":        "liver",
+    "Liver.obj":        "liver",
     "Kidney.obj":       "muscle",
-    # "Gallbladder.obj":  "water",
-    # "Pancreas.obj":     "muscle",
-    # "Colon.obj":        "muscle",
-    # "Small_bowel.obj":  "muscle",
-    # "Stomach.obj":      "muscle",
+    "Gallbladder.obj":  "water",
+    "Pancreas.obj":     "muscle",
+    "Colon.obj":        "muscle",
+    "Small_bowel.obj":  "muscle",
+    "Stomach.obj":      "muscle",
     "Heart.obj":        "muscle",
-    "Bone.obj":         "bone",
-    # "Back_muscles.obj": "muscle",
-    # "Spleen.obj":       "muscle",
+    # "Bone.obj":         "bone",
+    "Ribs.obj":         "bone",
+    "Spine.obj":         "bone",
+    "Hips.obj":         "bone",
+    "Back_muscles.obj": "muscle",
+    "Spleen.obj":       "muscle",
     # "Vessels.obj":      "blood",
+    "Veins.obj":      "blood",
     # "Tumor1.obj":       "liver",
     # "Tumor2.obj":       "liver",
-    # "Lungs.obj":        "muscle",
+    "Lungs.obj":        "muscle",
     # "Skin.obj":         "muscle",
+    # "Body.obj":         "muscle",
+
 }
 
 # Colours for Genesis viewer (RGB, medical convention)
 _ORGAN_COLORS = {
-    # "Liver.obj":        (0.50, 0.08, 0.08),
+    "Liver.obj":        (0.50, 0.08, 0.08),
     "Kidney.obj":       (0.75, 0.18, 0.12),
-    # "Gallbladder.obj":  (0.40, 0.62, 0.10),
-    # "Pancreas.obj":     (0.90, 0.60, 0.55),
-    # "Colon.obj":        (0.80, 0.50, 0.40),
-    # "Small_bowel.obj":  (0.88, 0.68, 0.58),
-    # "Stomach.obj":      (0.82, 0.55, 0.50),
+    "Gallbladder.obj":  (0.40, 0.62, 0.10),
+    "Pancreas.obj":     (0.90, 0.60, 0.55),
+    "Colon.obj":        (0.80, 0.50, 0.40),
+    "Small_bowel.obj":  (0.88, 0.68, 0.58),
+    "Stomach.obj":      (0.82, 0.55, 0.50),
     "Heart.obj":        (0.85, 0.08, 0.08),
-    "Bone.obj":         (0.92, 0.88, 0.78),
-    # "Back_muscles.obj": (0.60, 0.12, 0.12),
-    # "Spleen.obj":       (0.45, 0.08, 0.18),
+    # "Bone.obj":         (0.92, 0.88, 0.78),
+    "Ribs.obj":         (0.92, 0.88, 0.78),
+    "Spine.obj":         (0.92, 0.88, 0.78),
+    "Hips.obj":         (0.92, 0.88, 0.78),
+    "Back_muscles.obj": (0.60, 0.12, 0.12),
+    "Spleen.obj":       (0.45, 0.08, 0.18),
     # "Vessels.obj":      (0.55, 0.03, 0.08),
     # "Tumor1.obj":       (0.85, 0.82, 0.10),
     # "Tumor2.obj":       (0.85, 0.82, 0.10),
-    # "Lungs.obj":        (0.90, 0.70, 0.65),
+    "Lungs.obj":        (0.90, 0.70, 0.65),
     # "Skin.obj":         (0.88, 0.72, 0.58),
+    # "Body.obj":         (0.88, 0.72, 0.58),
+    "Veins.obj":        (0.85, 0.08, 0.08),
+    
 }
-
+#16 organs total
 
 _ORGAN_EULER_DEG  = tuple(_CFG["world"]["organ_euler_deg"])
 _ORIENT_EULER_DEG = tuple(_CFG["world"]["orient_euler_deg"])
@@ -164,6 +176,11 @@ def main():
 
     local_dir = get_i4h_local_asset_path()
 
+    # Download Franka robot asset if not already present
+    assets_dir = os.path.join(_REPO_ROOT, "assets")
+    print("Downloading required assets...")
+    _download_asset("Robots/Franka/", assets_dir)
+    
     robot_usd_path = os.path.join(_REPO_ROOT, "assets", "data", "Robots", "Franka", "fr3_US.usd")
 
     PHANTOM_POS_M = np.array(_CFG["world"]["phantom_pos"])
@@ -176,7 +193,8 @@ def main():
     gs.init(backend=gs.cpu if args.cpu else gs.gpu, logging_level="warning")
 
     # --- raysim setup ---------------------------------------------------------
-    organ_dir = os.path.join(local_dir, "Props", "ABDPhantom", "Organs")
+    # organ_dir = os.path.join(local_dir, "Props", "ABDPhantom", "Organs")
+    organ_dir = os.path.join(_REPO_ROOT, "output", "obj")
     rs_world, rs_materials = build_raysim_world(organ_dir)
     rs_simulator = rs.RaytracingUltrasoundSimulator(rs_world, rs_materials)
 
@@ -275,7 +293,7 @@ def main():
                 pos=PHANTOM_POS_M,
                 fixed=True,
                 euler=_ORGAN_EULER_DEG,
-                collision=False,
+                collision=True,
             ),
             surface=gs.surfaces.Default(color=color),
         )

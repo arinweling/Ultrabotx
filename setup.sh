@@ -178,6 +178,7 @@ prefix  = f"Assets/Isaac/Healthcare/{ver}/{h}/"
 needed = [
     "Props/ABDPhantom/",
     "Props/ClariusUltrasoundProbe/fixture.usda",
+    "Robots/Franka/",
 ]
 
 paginator = s3.get_paginator("list_objects_v2")
@@ -192,6 +193,21 @@ for np_ in needed:
                 s3.download_file(bucket, obj["Key"], dest)
 print("i4h assets ready")
 PYEOF
+
+# ── Download SonoGym assets ───────────────────────────────────────────────────
+section "SonoGym assets"
+SONOGYM_ASSET_URL="https://huggingface.co/datasets/yunkao/SonoGym_assets_models/resolve/main/assets.tar.gz"
+SONOGYM_ASSET_MARKER="$REPO_DIR/assets/data/Robots/Franka/fr3_US.usd"
+if [ -f "$SONOGYM_ASSET_MARKER" ]; then
+    info "SonoGym assets already present"
+else
+    info "Downloading SonoGym assets from Hugging Face..."
+    TMP_ASSET_TAR=$(mktemp)
+    curl -L "$SONOGYM_ASSET_URL" -o "$TMP_ASSET_TAR"
+    tar -xzf "$TMP_ASSET_TAR" -C "$REPO_DIR"
+    rm -f "$TMP_ASSET_TAR"
+    info "SonoGym assets extracted"
+fi
 
 # Regenerate fixture_nomtl.usda (MDL materials stripped, needed by Genesis)
 NOMTL_CHECK=$(conda run -n "$ENV_NAME" python -c "
