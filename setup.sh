@@ -87,6 +87,76 @@ else
     "$ENV_PIP" install -e "$GENESIS_DIR"[usd]
 fi
 
+# ── Genesis USD patches ───────────────────────────────────────────────────────
+section "Genesis USD patches"
+conda run -n "$ENV_NAME" python - << 'PYEOF'
+import genesis, os, sys
+
+usd_dir = os.path.join(os.path.dirname(genesis.__file__), "utils", "usd")
+
+def patch_file(path, marker, old, new):
+    with open(path) as f:
+        src = f.read()
+    if marker in src:
+        print(f"  already patched: {os.path.basename(path)}")
+        return
+    if old not in src:
+        print(f"  WARNING: expected text not found in {os.path.basename(path)} — skipping", file=sys.stderr)
+        return
+    with open(path, "w") as f:
+        f.write(src.replace(old, new, 1))
+    print(f"  patched: {os.path.basename(path)}")
+
+# usd_context.py — wrap parse_material_preview_surface in try/except
+patch_file(
+    os.path.join(usd_dir, "usd_context.py"),
+    marker="Could not parse material at",
+    old="""\
+                    material_dict, uv_name = parse_material_preview_surface(material)""",
+    new="""\
+                    try:
+                        material_dict, uv_name = parse_material_preview_surface(material)
+                    except Exception:
+                        gs.logger.warning(
+                            f"Could not parse material at {material_prim.GetPath()} — skipping."
+                        )
+                        material_dict, uv_name = {}, "st\"""",
+)
+
+# usd_material.py — validate NodeGraph ComputeOutputSource result
+patch_file(
+    os.path.join(usd_dir, "usd_material.py"),
+    marker="has no connected source for output",
+    old="""\
+        return UsdShade.NodeGraph(prim).ComputeOutputSource(output_name)[0]""",
+    new="""\
+        shader = UsdShade.NodeGraph(prim).ComputeOutputSource(output_name)[0]
+        if not shader.GetPrim().IsValid():
+            gs.raise_exception(
+                f"NodeGraph at {prim.GetPath()} has no connected source for output '{output_name}'."
+            )
+        return shader""",
+)
+
+# usd_rigid_entity.py — skip loop PhysicsFixedJoint instead of raising
+patch_file(
+    os.path.join(usd_dir, "usd_rigid_entity.py"),
+    marker="skipping loop joint",
+    old="""\
+        elif l_info["parent_idx"] != parent_idx:
+            gs.raise_exception(f"Link {link.GetPath()} has multiple parents: {l_info['parent_idx']} and {parent_idx}.")""",
+    new="""\
+        elif l_info["parent_idx"] != parent_idx:
+            if joint_prim is not None and joint_prim.IsA(UsdPhysics.FixedJoint):
+                gs.logger.warning(
+                    f"Link {link.GetPath()} has a loop PhysicsFixedJoint to parent {parent_idx} "
+                    f"(already parented to {l_info['parent_idx']}) — skipping loop joint."
+                )
+                continue
+            gs.raise_exception(f"Link {link.GetPath()} has multiple parents: {l_info['parent_idx']} and {parent_idx}.")""",
+)
+PYEOF
+
 # ── i4h asset helper ──────────────────────────────────────────────────────────
 section "i4h asset helper"
 CATALOG_DIR="$REPO_DIR/i4h-asset-catalog"
@@ -150,6 +220,38 @@ if conda run -n "$ENV_NAME" python -c "import cv2" >/dev/null 2>&1; then
     info "OpenCV already installed"
 else
     "$ENV_PIP" install opencv-python
+fi
+
+# ── h5py (HDF5 data recording) ────────────────────────────────────────────────
+section "h5py"
+if conda run -n "$ENV_NAME" python -c "import h5py" >/dev/null 2>&1; then
+    info "h5py already installed"
+else
+    "$ENV_PIP" install h5py
+fi
+
+# ── nibabel + ruamel.yaml (SonoGym NIfTI volumes and YAML configs) ────────────
+section "nibabel + ruamel.yaml"
+if conda run -n "$ENV_NAME" python -c "import nibabel, ruamel.yaml" >/dev/null 2>&1; then
+    info "nibabel and ruamel.yaml already installed"
+else
+    "$ENV_PIP" install nibabel "ruamel.yaml"
+fi
+
+# ── monai (SonoGym USSimulatorNetwork UNet backbone) ─────────────────────────
+section "monai"
+if conda run -n "$ENV_NAME" python -c "import monai" >/dev/null 2>&1; then
+    info "monai already installed"
+else
+    "$ENV_PIP" install monai
+fi
+
+# ── pyvista + pydicom (SonoGym USSimulatorConv deps) ─────────────────────────
+section "pyvista + pydicom"
+if conda run -n "$ENV_NAME" python -c "import pyvista, pydicom" >/dev/null 2>&1; then
+    info "pyvista and pydicom already installed"
+else
+    "$ENV_PIP" install pyvista pydicom
 fi
 
 # ── Symlink panda MJCF assets so custom XML can use relative meshdir ─────────

@@ -1,0 +1,16 @@
+# EchoWorld probe guidance configuration
+
+[model]
+# Path to EchoWorld fine-tuned checkpoint (keys: "encoder", "predictor")
+# Set to "" to disable guidance entirely
+ckpt_path    = ""
+# Number of B-mode frames in the temporal context window
+num_frames   = 5
+# Standard cardiac plane to navigate toward (0-9)
+target_plane = 0
+
+[guidance]
+# Scale factor applied to the predicted probe delta before sending to robot
+action_scale = 0.02
+# Number of physics steps between ultrasound renders (US render cadence)
+us_every     = 10

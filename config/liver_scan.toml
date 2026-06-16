@@ -1,0 +1,38 @@
+# Liver scan state machine configuration for Genesis
+# Ported from i4h-workflows robotic_ultrasound liver_scan_sm.py
+
+[episode]
+num_episodes  = 10    # total episodes to collect
+max_steps     = 400   # hard timeout per episode (steps)
+reset_steps   = 60    # physics steps to settle after reset
+
+[robot]
+# End-effector DOWN orientation — probe pointing toward phantom
+# XYZ Euler angles in degrees (same as i4h DOWN_EULER_DEG = (180, 0, 180))
+down_euler_deg = [0.0, 180.0, 0.0]  # Genesis xyz_to_quat convention; 45° Z rotation
+
+[positions]
+# World-frame waypoints (metres).  Derived from i4h PhantomScanPositions via:
+#   world = phantom_pos + R_yaw(180°) @ local
+# phantom_pos = [0.6, 0.0, 0.09],  base yaw = 180° → flips x and y signs
+# local SCAN_START   = ( 0.003,  0.050,  0.200)
+# local SCAN_CONTACT = ( 0.003,  0.050,  0.0983)
+# local SCAN_END     = (-0.047, -0.040,  0.0857)
+scan_start_world   = [0.597, -0.050,  0.390]
+scan_contact_world = [0.597, -0.050,  0.288]
+scan_end_world     = [0.647,  0.040,  0.276]
+
+[transitions]
+# Proximity threshold to trigger SETUP→APPROACH and APPROACH→CONTACT (metres)
+pos_tolerance_m = 0.012
+# Steps to hold at contact before starting scan (simulates force settle)
+contact_steps   = 20
+
+[scanning]
+scan_steps  = 100   # steps to traverse contact → end
+hold_steps  = 30    # steps to hold at end before marking DONE
+
+[output]
+# HDF5 output directory (relative to repo root)
+data_dir = "data/liver_scan"
+task_name = "Genesis-LiverScan-FrankaUsRs-v0"

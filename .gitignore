@@ -7,3 +7,7 @@ __pycache__/
 *.egg-info/
 .env
 assets/
+EchoNet-Synthetic
+EchoWorld
+models
+SCUT_Thyroid_Dataset

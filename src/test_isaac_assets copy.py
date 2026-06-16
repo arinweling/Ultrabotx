@@ -32,13 +32,13 @@ import numpy as np
 import genesis as gs
 import genesis.utils.geom as gu
 from genesis.vis.keybindings import Key, KeyAction, Keybind
-from i4h_asset_helper.assets import get_i4h_local_asset_path
+from i4h_asset_helper.assets import (
+    _get_s3_client, _S3_BUCKETS, _get_asset_env,
+    get_i4h_local_asset_path, get_i4h_asset_hash, get_i4h_asset_version,
+)
 
 _REPO_ROOT   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _CONFIG_PATH = os.path.join(_REPO_ROOT, "config", "raysim_isaac.toml")
-_CAMERA_MESH = os.path.join(
-    _REPO_ROOT, "genesis-world", "genesis", "assets", "meshes", "camera", "camera.glb",
-)
 
 with open(_CONFIG_PATH, "rb") as _f:
     _CFG = tomllib.load(_f)
@@ -49,6 +49,26 @@ if _RAYSIM_ROOT not in sys.path:
     sys.path.insert(0, _RAYSIM_ROOT)
 
 import raysim.cuda as rs
+
+
+# --- Asset download -----------------------------------------------------------
+
+def _download_asset(sub_path: str, local_dir: str) -> None:
+    """Download all files under sub_path from S3 if not already present."""
+    bucket   = _S3_BUCKETS[_get_asset_env()]
+    ver      = get_i4h_asset_version()
+    h        = get_i4h_asset_hash(version=ver)
+    prefix   = f"Assets/Isaac/Healthcare/{ver}/{h}/"
+    s3       = _get_s3_client()
+    paginator = s3.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix + sub_path):
+        for obj in page.get("Contents", []):
+            rel  = obj["Key"][len(prefix):]
+            dest = os.path.join(local_dir, rel)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            if not os.path.exists(dest):
+                print(f"  Downloading {rel}")
+                s3.download_file(bucket, obj["Key"], dest)
 
 
 # --- Coordinate helpers ------------------------------------------------------
@@ -90,7 +110,7 @@ _ORGAN_MATERIALS = {
     "Tumor1.obj":       "liver",
     "Tumor2.obj":       "liver",
     "Lungs.obj":        "muscle",
-    "Skin.obj":         "water",
+    # "Skin.obj":         "muscle",
 }
 
 # Colours for Genesis viewer (RGB, medical convention)
@@ -110,7 +130,7 @@ _ORGAN_COLORS = {
     "Tumor1.obj":       (0.85, 0.82, 0.10),
     "Tumor2.obj":       (0.85, 0.82, 0.10),
     "Lungs.obj":        (0.90, 0.70, 0.65),
-    "Skin.obj":         (0.88, 0.72, 0.58),
+    # "Skin.obj":         (0.88, 0.72, 0.58),
 }
 
 
@@ -216,7 +236,7 @@ def main():
         ),
 
         viewer_options=gs.options.ViewerOptions(
-            enable_gui=False,
+            enable_gui=True,
             camera_pos=(1.5, 1.0, 1.0),
             camera_lookat=(0.4, 0.0, 0.2),
             camera_fov=50,
@@ -238,12 +258,12 @@ def main():
     )
     print(f"Robot USD loaded: {robot_usd_path}")
 
-    # # Phantom outer skin
-    # phantom_path = os.path.join(local_dir, "Props", "ABDPhantom", "phantom.usda")
-    # scene.add_entity(
-    #     morph=gs.morphs.USD(file=phantom_path, pos=PHANTOM_POS_M, euler=(0, 0, 180), fixed=True)
+    # Phantom outer skin
+    phantom_path = os.path.join(local_dir, "Props", "ABDPhantom", "phantom.usda")
+    # scene.add_stage(
+    #     gs.morphs.USD(file=phantom_path, pos=PHANTOM_POS_M, euler=(0, 0, 180), fixed=True)
     # )
-    # print("Loaded phantom skin (USD)")
+    print("Loaded phantom skin (USD)")
 
     # Individual organs
     for obj_name, color in _ORGAN_COLORS.items():
@@ -268,11 +288,15 @@ def main():
         surface=gs.surfaces.Default(color=(1, 0.5, 0.5, 1)),
     )
 
-    # --- RealSense D435 depth camera (attached to wrist fr3_link7) -----------
+    # --- RealSense D435 depth camera (world-fixed, overhead view) -------------
     # D435 specs: 640x480 depth, 87°H x 58°V FOV, 0.1–3m range
-    # Mounted to the side of the wrist, facing outward
-    _cam_pos_offset   = (-0.14, 0.0, 0.06)  # 6 cm to the side
-    _cam_euler_offset = (90.0, -90.0, 0.0)  # face outward from wrist
+    # pos_offset is in world frame (plane is at origin with no rotation)
+    # Camera is placed 1.2m above, 0.9m behind the phantom, angled 40° down
+    _cam_x   = PHANTOM_POS_M[0] + 0.3
+    _cam_y   = PHANTOM_POS_M[1]
+    _cam_z   = 0.5    
+    _cam_pos = (_cam_x, _cam_y, _cam_z)
+    _cam_euler = (0.0, 40.0, 180.0)
 
     realsense = scene.add_sensor(
         gs.sensors.DepthCamera(
@@ -281,27 +305,33 @@ def main():
                 fov_horizontal=87.0,
                 fov_vertical=58.0,
             ),
-            entity_idx=robot.idx,
-            link_idx_local=robot.get_link("/fr3/fr3_link7").idx,
-            pos_offset=_cam_pos_offset,
-            euler_offset=_cam_euler_offset,
+            entity_idx=plane.idx,
+            link_idx_local=0,
+            pos_offset=_cam_pos,
+            euler_offset=_cam_euler,
             max_range=3.0,
             min_range=0.1,
             return_world_frame=True,
         )
     )
 
-    # Visual placeholder box sized to RealSense D435 (~90x25x25 mm)
-    cam_mesh = scene.add_entity(
-        material=gs.materials.Rigid(gravity_compensation=1.0),
-        morph=gs.morphs.Box(
-            size=(0.090, 0.025, 0.025),
-            pos=(0, 0, 0),
+    # Visual mesh so the camera is visible in the Genesis viewer
+    _CAMERA_MESH = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "genesis-world", "genesis", "assets", "meshes", "camera", "camera.glb",
+    )
+    scene.add_entity(
+        morph=gs.morphs.Mesh(
+            file=_CAMERA_MESH,
+            scale=0.02,
+            pos=_cam_pos,
+            euler=(-_cam_euler[1], _cam_euler[0], _cam_euler[2] - 90.0),
+            fixed=True,
             collision=False,
         ),
         surface=gs.surfaces.Default(color=(0.1, 0.1, 0.1, 1.0)),
     )
-    print("RealSense D435 sensor attached to wrist (/fr3/fr3_link7)")
+    print(f"RealSense D435 sensor added at ({_cam_x:.2f}, {_cam_y:.2f}, {_cam_z:.2f})")
 
     scene.build()
 
@@ -313,7 +343,6 @@ def main():
     n_dofs     = robot.n_dofs
     motors_dof = np.arange(n_dofs)
     ee_link    = robot.get_link("/fr3/fr3_link8")
-    wrist_link = robot.get_link("/fr3/fr3_link7")  # camera is mounted here
     probe_link = robot.get_link("/fr3/linear")
 
     # USD joint gains are too weak (stiffness=100, damping=1) — override with Franka defaults
@@ -365,7 +394,7 @@ def main():
     is_running = True
 
     def stop():
-        nonlocal is_running
+        global is_running
         is_running = False
 
     scene.viewer.register_keybinds(
@@ -399,15 +428,6 @@ def main():
             robot.control_dofs_position(q, motors_dof)
             scene.step()
 
-            # Update camera visual box to follow wrist with offset
-            wrist_p = wrist_link.get_pos().cpu().numpy()
-            wrist_q = wrist_link.get_quat().cpu().numpy()
-            R_wrist = gu.quat_to_R(wrist_q)
-            cam_p = wrist_p + R_wrist @ np.array(_cam_pos_offset, dtype=np.float32)
-            cam_q_offset = gu.xyz_to_quat(np.radians(np.array(_cam_euler_offset, dtype=np.float32)))
-            cam_q = gu.transform_quat_by_quat(wrist_q, cam_q_offset)
-            cam_mesh.set_qpos(np.concatenate([cam_p, cam_q]))
-
             probe_body_m  = probe_link.get_pos().cpu().numpy()
             probe_face_q  = probe_link.get_quat().cpu().numpy()
             R_probe       = gu.quat_to_R(probe_face_q)
@@ -420,21 +440,13 @@ def main():
                 # Exclude no-hit pixels (clamped to max_range=3.0) and non-finite values
                 valid = np.isfinite(depth_np) & (depth_np < 2.99)
                 if valid.any():
-                    # Percentile clip to establish a base gradient
+                    # Percentile clip so a few far/near outliers don't crush the gradient
                     p2, p98 = np.percentile(depth_np[valid], [2, 98])
                     norm = np.clip((depth_np - p2) / max(p98 - p2, 1e-6), 0.0, 1.0)
-                    
-                    # Convert to 8-bit
-                    depth_8u = (norm * 255).astype(np.uint8)
-                    
-                    # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
-                    # This maximizes local contrast to show maximum detail for small depth differences
-                    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-                    depth_enhanced = clahe.apply(depth_8u)
-                    depth_enhanced[~valid] = 0  # keep background black
-                    
-                    # TURBO has better perceptual uniformity than JET; display at full res for detail
-                    depth_vis = cv2.applyColorMap(depth_enhanced, cv2.COLORMAP_TURBO)
+                    norm[~valid] = 0.0
+                    # TURBO has better perceptual uniformity than JET; display at half res for speed
+                    depth_vis = cv2.applyColorMap((norm * 255).astype(np.uint8), cv2.COLORMAP_TURBO)
+                    depth_vis = cv2.resize(depth_vis, (320, 240), interpolation=cv2.INTER_NEAREST)
                     cv2.imshow("RealSense D435 Depth", depth_vis)
                     cv2.waitKey(1)
 
