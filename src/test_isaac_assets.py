@@ -17,9 +17,6 @@ esc - Quit
 
 Plus default viewer controls (press 'i' in viewer to see them)
 
-Differences from test.py:
-  - Robot loaded from i4h panda_assembly.usda instead of local MJCF
-  - Phantom/probe assets remain the same (already from i4h asset helper)
 """
 
 import argparse
@@ -28,6 +25,7 @@ import sys
 import tomllib
 
 import cv2
+import json
 import numpy as np
 import genesis as gs
 import genesis.utils.geom as gu
@@ -49,6 +47,34 @@ if _RAYSIM_ROOT not in sys.path:
     sys.path.insert(0, _RAYSIM_ROOT)
 
 import raysim.cuda as rs
+
+
+# --- Organ config loaded from JSON files -------------------------------------
+
+def _load_organ_config(obj_dir: str):
+    """Load material and colour maps from JSON files alongside the OBJ meshes."""
+    mat_path = os.path.join(obj_dir, "material_index.json")
+    col_path  = os.path.join(obj_dir, "colour.json")
+
+    if not os.path.exists(mat_path):
+        raise FileNotFoundError(f"material_index.json not found in {obj_dir}. "
+                                "Run scripts/seg_to_obj.py first.")
+    if not os.path.exists(col_path):
+        raise FileNotFoundError(f"colour.json not found in {obj_dir}. "
+                                "Run scripts/seg_to_obj.py first.")
+
+    with open(mat_path) as f:
+        materials = json.load(f)
+    with open(col_path) as f:
+        raw_colors = json.load(f)
+
+    # Only keep entries whose OBJ file actually exists on disk
+    materials = {k: v for k, v in materials.items()
+                 if os.path.exists(os.path.join(obj_dir, k))}
+    colors    = {k: tuple(v) for k, v in raw_colors.items()
+                 if k in materials}
+
+    return materials, colors
 
 
 # --- Asset download -----------------------------------------------------------
@@ -94,74 +120,22 @@ def _euler_deg_to_R(ex, ey, ez):
 
 US_SCAN_DEPTH_MM = _CFG["sim"]["t_far"]
 
-_ORGAN_MATERIALS = {
-    "Liver.obj":        "liver",
-    "Kidney.obj":       "muscle",
-    "Gallbladder.obj":  "water",
-    "Pancreas.obj":     "muscle",
-    "Colon.obj":        "muscle",
-    "Small_bowel.obj":  "muscle",
-    "Stomach.obj":      "muscle",
-    "Heart.obj":        "muscle",
-    # "Bone.obj":         "bone",
-    "Ribs.obj":         "bone",
-    "Spine.obj":         "bone",
-    "Hips.obj":         "bone",
-    "Back_muscles.obj": "muscle",
-    "Spleen.obj":       "muscle",
-    # "Vessels.obj":      "blood",
-    "Veins.obj":      "blood",
-    # "Tumor1.obj":       "liver",
-    # "Tumor2.obj":       "liver",
-    "Lungs.obj":        "muscle",
-    # "Skin.obj":         "muscle",
-    # "Body.obj":         "muscle",
-
-}
-
-# Colours for Genesis viewer (RGB, medical convention)
-_ORGAN_COLORS = {
-    "Liver.obj":        (0.50, 0.08, 0.08),
-    "Kidney.obj":       (0.75, 0.18, 0.12),
-    "Gallbladder.obj":  (0.40, 0.62, 0.10),
-    "Pancreas.obj":     (0.90, 0.60, 0.55),
-    "Colon.obj":        (0.80, 0.50, 0.40),
-    "Small_bowel.obj":  (0.88, 0.68, 0.58),
-    "Stomach.obj":      (0.82, 0.55, 0.50),
-    "Heart.obj":        (0.85, 0.08, 0.08),
-    # "Bone.obj":         (0.92, 0.88, 0.78),
-    "Ribs.obj":         (0.92, 0.88, 0.78),
-    "Spine.obj":         (0.92, 0.88, 0.78),
-    "Hips.obj":         (0.92, 0.88, 0.78),
-    "Back_muscles.obj": (0.60, 0.12, 0.12),
-    "Spleen.obj":       (0.45, 0.08, 0.18),
-    # "Vessels.obj":      (0.55, 0.03, 0.08),
-    # "Tumor1.obj":       (0.85, 0.82, 0.10),
-    # "Tumor2.obj":       (0.85, 0.82, 0.10),
-    "Lungs.obj":        (0.90, 0.70, 0.65),
-    # "Skin.obj":         (0.88, 0.72, 0.58),
-    # "Body.obj":         (0.88, 0.72, 0.58),
-    "Veins.obj":        (0.85, 0.08, 0.08),
-    
-}
-#16 organs total
-
 _ORGAN_EULER_DEG  = tuple(_CFG["world"]["organ_euler_deg"])
 _ORIENT_EULER_DEG = tuple(_CFG["world"]["orient_euler_deg"])
 
 
-def build_raysim_world(organ_dir):
+def build_raysim_world(organ_dir, organ_materials):
     materials = rs.Materials()
     world = rs.World("water")
     loaded = []
-    for obj_name, mat_name in _ORGAN_MATERIALS.items():
+    for obj_name, mat_name in organ_materials.items():
         obj_path = os.path.join(organ_dir, obj_name)
         if not os.path.exists(obj_path):
             continue
         mat_idx = materials.get_index(mat_name)
         world.add(rs.Mesh(obj_path, mat_idx))
         loaded.append(obj_name)
-    print(f"raysim meshes: {', '.join(loaded)}")
+    print(f"raysim meshes ({len(loaded)}): {', '.join(loaded)}")
     return world, materials
 
 
@@ -172,6 +146,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-v", "--vis", action="store_true", default=True)
     parser.add_argument("--cpu", action="store_true", default=False)
+    parser.add_argument("--obj_dir", default=os.path.join(_REPO_ROOT, "output", "obj_all"),
+                        help="Directory containing OBJ meshes, material_index.json and colour.json")
+    parser.add_argument("--only", default=None,
+                        help="Comma-separated substrings: only load organs whose filename matches any (e.g. 'lung')")
     args = parser.parse_args()
 
     local_dir = get_i4h_local_asset_path()
@@ -192,10 +170,18 @@ def main():
 
     gs.init(backend=gs.cpu if args.cpu else gs.gpu, logging_level="warning")
 
+    # --- Organ config ---------------------------------------------------------
+    organ_dir = args.obj_dir
+    organ_materials, organ_colors = _load_organ_config(organ_dir)
+    if args.only:
+        filters = [s.strip().lower() for s in args.only.split(",")]
+        organ_materials = {k: v for k, v in organ_materials.items()
+                           if any(f in k.lower() for f in filters)}
+        organ_colors    = {k: v for k, v in organ_colors.items() if k in organ_materials}
+    print(f"Loaded {len(organ_materials)} organ configs from {organ_dir}")
+
     # --- raysim setup ---------------------------------------------------------
-    # organ_dir = os.path.join(local_dir, "Props", "ABDPhantom", "Organs")
-    organ_dir = os.path.join(_REPO_ROOT, "output", "obj")
-    rs_world, rs_materials = build_raysim_world(organ_dir)
+    rs_world, rs_materials = build_raysim_world(organ_dir, organ_materials)
     rs_simulator = rs.RaytracingUltrasoundSimulator(rs_world, rs_materials)
 
     _s = _CFG["sim"]
@@ -282,7 +268,8 @@ def main():
     print("Loaded phantom skin (USD)")
 
     # Individual organs
-    for obj_name, color in _ORGAN_COLORS.items():
+    n_loaded = 0
+    for obj_name, color in organ_colors.items():
         obj_path = os.path.join(organ_dir, obj_name)
         if not os.path.exists(obj_path):
             continue
@@ -293,11 +280,12 @@ def main():
                 pos=PHANTOM_POS_M,
                 fixed=True,
                 euler=_ORGAN_EULER_DEG,
-                collision=True,
+                collision=False,
             ),
             surface=gs.surfaces.Default(color=color),
         )
-    print(f"Loaded {sum(1 for n in _ORGAN_COLORS if os.path.exists(os.path.join(organ_dir, n)))} organs")
+        n_loaded += 1
+    print(f"Loaded {n_loaded} organs into Genesis")
 
     target = scene.add_entity(
         gs.morphs.Mesh(file="meshes/axis.obj", scale=0.15, collision=False),

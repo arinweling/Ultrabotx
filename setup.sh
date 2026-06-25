@@ -27,6 +27,48 @@ DRIVER_VERSION=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | h
 info "NVIDIA driver: $DRIVER_VERSION"
 info "Repo root:     $REPO_DIR"
 
+# ── WSL2: OptiX driver fix ────────────────────────────────────────────────────
+if grep -qiE "microsoft|WSL" /proc/version 2>/dev/null; then
+    section "WSL2 OptiX driver check"
+    WSL_LIB="/usr/lib/wsl/lib"
+    OPTIX_DST="$WSL_LIB/libnvoptix.so.1"
+
+    # Search common locations for driver-dist folder
+    DRIVER_DIST=""
+    for candidate in \
+        "/mnt/wslg/distro/home/${USER}/driver-dist" \
+        "/mnt/c/Users/${USER}/driver-dist" \
+        "$HOME/driver-dist"; do
+        if [ -f "${candidate}/libnvoptix.so.1" ]; then
+            DRIVER_DIST="$candidate"
+            break
+        fi
+    done
+
+    if [ -z "$DRIVER_DIST" ]; then
+        warn "WSL2 detected but driver-dist folder not found."
+        warn "OptiX (raysim) requires an up-to-date libnvoptix.so.1 in $WSL_LIB."
+        warn "To fix OPTIX_ERROR_ENTRY_SYMBOL_NOT_FOUND, do the following:"
+        warn "  1. Locate your NVIDIA driver package and extract libnvoptix.so.1"
+        warn "     (commonly found at C:\\Windows\\System32\\libnvoptix.so.1 or"
+        warn "      in the driver installer folder)"
+        warn "  2. Copy it into WSL:"
+        warn "     sudo cp /mnt/c/path/to/libnvoptix.so.1 $OPTIX_DST"
+        warn "     sudo ldconfig"
+        warn "  Or re-run setup.sh after placing the file in ~/driver-dist/"
+    else
+        OPTIX_SRC="$DRIVER_DIST/libnvoptix.so.1"
+        if [ ! -f "$OPTIX_DST" ] || ! cmp -s "$OPTIX_SRC" "$OPTIX_DST"; then
+            info "Updating $OPTIX_DST from $DRIVER_DIST ..."
+            sudo cp "$OPTIX_SRC" "$OPTIX_DST"
+            sudo ldconfig
+            info "libnvoptix.so.1 updated"
+        else
+            info "libnvoptix.so.1 already up to date"
+        fi
+    fi
+fi
+
 # # ── submodules ────────────────────────────────────────────────────────────────
 # section "Initialising submodules"
 # git -C "$REPO_DIR" submodule update --init --recursive
@@ -150,6 +192,14 @@ if conda run -n "$ENV_NAME" python -c "import cv2" >/dev/null 2>&1; then
     info "OpenCV already installed"
 else
     "$ENV_PIP" install opencv-python
+fi
+
+# ── nibabel (NIfTI I/O for seg_to_obj.py) ────────────────────────────────────
+section "nibabel"
+if conda run -n "$ENV_NAME" python -c "import nibabel" >/dev/null 2>&1; then
+    info "nibabel already installed"
+else
+    "$ENV_PIP" install nibabel
 fi
 
 # ── Symlink panda MJCF assets so custom XML can use relative meshdir ─────────
