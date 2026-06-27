@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="90.000mm" height="75.000mm"
+     viewBox="0 0 90.000 75.000">
+
+  <!-- Background -->
+  <rect width="90.000" height="75.000" fill="white"/>
+
+  <!-- Cut border -->
+  <rect x="0.5" y="0.5" width="89.000" height="74.000"
+        fill="none" stroke="#cccccc" stroke-width="0.3" stroke-dasharray="2,2"/>
+
+
+  <!-- ── Circles ── -->
+  <circle cx="25.000" cy="50.000" r="10.000" fill="black" stroke="none" stroke-width="0.000"/>
+  <circle cx="25.000" cy="50.000" r="4.000" fill="white" stroke="none" stroke-width="0.000"/>
+  <circle cx="65.000" cy="50.000" r="10.000" fill="black" stroke="none" stroke-width="0.000"/>
+  <circle cx="65.000" cy="50.000" r="4.000" fill="white" stroke="none" stroke-width="0.000"/>
+  <circle cx="25.000" cy="25.000" r="10.000" fill="black" stroke="none" stroke-width="0.000"/>
+  <circle cx="25.000" cy="25.000" r="4.000" fill="white" stroke="none" stroke-width="0.000"/>
+
+</svg>

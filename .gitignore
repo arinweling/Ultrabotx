@@ -8,3 +8,4 @@ __pycache__/
 .env
 assets/
 output
+xml/franka_emika_panda/assets
