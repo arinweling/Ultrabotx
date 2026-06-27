@@ -126,10 +126,12 @@ Two windows open:
 
 | Key | Action |
 |-----|--------|
-| `↑` / `↓` | Move end-effector forward / backward |
-| `←` / `→` | Move end-effector left / right |
-| `n` / `m` | Move end-effector up / down |
-| `j` / `k` | Rotate end-effector counterclockwise / clockwise |
+| `↑` / `↓` | Sweep probe along its face |
+| `←` / `→` | Slide probe across its face |
+| `m` / `n` | Press / release probe normal to the face |
+| `j` / `k` | Rotate probe footprint |
+| `q` / `e` | Rock probe side-to-side |
+| `t` / `g` | Tilt probe heel-toe |
 | `space` (hold) | Close gripper |
 | `\` | Reset robot pose |
 | `esc` | Quit |

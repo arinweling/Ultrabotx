@@ -1,13 +1,11 @@
 """
 Keyboard Controls:
-↑  - Move end-effector forward
-↓  - Move end-effector backward
-←  - Move end-effector left
-→  - Move end-effector right
-n  - Move end-effector up
-m  - Move end-effector down
-j  - Rotate end-effector counterclockwise
-k  - Rotate end-effector clockwise
+↑ / ↓  - Sweep probe along its face
+← / →  - Slide probe across its face
+m / n  - Press / release probe normal to the face
+j / k  - Rotate probe footprint
+q / e  - Rock probe side-to-side
+t / g  - Tilt probe heel-toe
 [  - Decrease scan depth  (-10 mm)
 ]  - Increase scan depth  (+10 mm)
 ,  - Decrease probe frequency (-0.5 MHz)
@@ -61,6 +59,28 @@ def _quat_wxyz_to_euler_xyz(quat_wxyz):
 # --- raysim world setup ------------------------------------------------------
 
 PROBE_TCP_OFFSET_M = np.array(_CFG["sensor"]["tcp_offset_m"])
+
+
+def _probe_control_axes():
+    press_axis = PROBE_TCP_OFFSET_M.astype(np.float64)
+    press_norm = np.linalg.norm(press_axis)
+    if press_norm < 1e-9:
+        press_axis = np.array([0.0, 0.0, 1.0])
+    else:
+        press_axis /= press_norm
+
+    slide_axis = np.array([1.0, 0.0, 0.0])
+    if abs(float(np.dot(slide_axis, press_axis))) > 0.95:
+        slide_axis = np.array([0.0, 1.0, 0.0])
+    slide_axis = slide_axis - press_axis * np.dot(slide_axis, press_axis)
+    slide_axis /= np.linalg.norm(slide_axis)
+
+    sweep_axis = np.cross(press_axis, slide_axis)
+    sweep_axis /= np.linalg.norm(sweep_axis)
+    return slide_axis, sweep_axis, press_axis
+
+
+PROBE_SLIDE_AXIS, PROBE_SWEEP_AXIS, PROBE_PRESS_AXIS = _probe_control_axes()
 
 def _euler_deg_to_R(ex, ey, ez):
     rx, ry, rz = np.radians(ex), np.radians(ey), np.radians(ez)
@@ -319,12 +339,12 @@ def main():
         rs_probe_template.set_frequency(probe_freq_mhz[0])
         print(f"\rUS freq: {probe_freq_mhz[0]:.1f} MHz    ", end="", flush=True)
 
-    def move(delta):
-        target_pos[:] += np.array(delta, dtype=gs.np_float)
+    def move_probe(local_delta):
+        target_pos[:] += gu.quat_to_R(target_quat) @ np.array(local_delta, dtype=gs.np_float)
 
-    def rotate(delta):
+    def rotate_probe(local_axis, delta):
         target_quat[:] = gu.transform_quat_by_quat(
-            target_quat, gu.xyz_to_quat(np.array([0, 0, delta]))
+            target_quat, gu.xyz_to_quat(np.array(local_axis, dtype=gs.np_float) * delta)
         )
 
     def change_depth(delta):
@@ -339,14 +359,18 @@ def main():
         is_running = False
 
     scene.viewer.register_keybinds(
-        Keybind("move_forward",  Key.UP,           KeyAction.HOLD,    callback=move,         args=((-dpos, 0, 0),)),
-        Keybind("move_back",     Key.DOWN,          KeyAction.HOLD,    callback=move,         args=((dpos, 0, 0),)),
-        Keybind("move_left",     Key.LEFT,          KeyAction.HOLD,    callback=move,         args=((0, -dpos, 0),)),
-        Keybind("move_right",    Key.RIGHT,         KeyAction.HOLD,    callback=move,         args=((0, dpos, 0),)),
-        Keybind("move_up",       Key.N,             KeyAction.HOLD,    callback=move,         args=((0, 0, dpos),)),
-        Keybind("move_down",     Key.M,             KeyAction.HOLD,    callback=move,         args=((0, 0, -dpos),)),
-        Keybind("rotate_ccw",    Key.J,             KeyAction.HOLD,    callback=rotate,       args=(drot,)),
-        Keybind("rotate_cw",     Key.K,             KeyAction.HOLD,    callback=rotate,       args=(-drot,)),
+        Keybind("probe_sweep_forward", Key.UP,           KeyAction.HOLD,    callback=move_probe,   args=(PROBE_SWEEP_AXIS * dpos,)),
+        Keybind("probe_sweep_back",    Key.DOWN,         KeyAction.HOLD,    callback=move_probe,   args=(-PROBE_SWEEP_AXIS * dpos,)),
+        Keybind("probe_slide_left",    Key.LEFT,         KeyAction.HOLD,    callback=move_probe,   args=(-PROBE_SLIDE_AXIS * dpos,)),
+        Keybind("probe_slide_right",   Key.RIGHT,        KeyAction.HOLD,    callback=move_probe,   args=(PROBE_SLIDE_AXIS * dpos,)),
+        Keybind("probe_release",       Key.N,            KeyAction.HOLD,    callback=move_probe,   args=(-PROBE_PRESS_AXIS * dpos,)),
+        Keybind("probe_press",         Key.M,            KeyAction.HOLD,    callback=move_probe,   args=(PROBE_PRESS_AXIS * dpos,)),
+        Keybind("probe_rotate_ccw",    Key.J,            KeyAction.HOLD,    callback=rotate_probe, args=(PROBE_PRESS_AXIS, drot)),
+        Keybind("probe_rotate_cw",     Key.K,            KeyAction.HOLD,    callback=rotate_probe, args=(PROBE_PRESS_AXIS, -drot)),
+        Keybind("probe_rock_left",     Key.Q,            KeyAction.HOLD,    callback=rotate_probe, args=(PROBE_SWEEP_AXIS, drot)),
+        Keybind("probe_rock_right",    Key.E,            KeyAction.HOLD,    callback=rotate_probe, args=(PROBE_SWEEP_AXIS, -drot)),
+        Keybind("probe_tilt_up",       Key.T,            KeyAction.HOLD,    callback=rotate_probe, args=(PROBE_SLIDE_AXIS, drot)),
+        Keybind("probe_tilt_down",     Key.G,            KeyAction.HOLD,    callback=rotate_probe, args=(PROBE_SLIDE_AXIS, -drot)),
         Keybind("depth_inc",     Key.BRACKETRIGHT, KeyAction.RELEASE, callback=change_depth, args=(ddepth,)),
         Keybind("depth_dec",     Key.BRACKETLEFT,  KeyAction.RELEASE, callback=change_depth, args=(-ddepth,)),
         Keybind("freq_inc", Key.PERIOD, KeyAction.RELEASE, callback=change_freq, args=(dfreq,)),

@@ -9,3 +9,6 @@ __pycache__/
 assets/
 output
 xml/franka_emika_panda/assets
+build/
+log/
+install/

@@ -11,3 +11,6 @@
 [submodule "i4h-workflows"]
 	path = i4h-workflows
 	url = https://github.com/isaac-for-healthcare/i4h-workflows.git
+[submodule "sensorstream_driver"]
+	path = sensorstream_driver
+	url = https://github.com/martijnhabers/sensorstream_driver

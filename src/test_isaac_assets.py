@@ -1,13 +1,11 @@
 """
 Keyboard Controls:
-↑  - Move end-effector forward
-↓  - Move end-effector backward
-←  - Move end-effector left
-→  - Move end-effector right
-n  - Move end-effector up
-m  - Move end-effector down
-j  - Rotate end-effector counterclockwise
-k  - Rotate end-effector clockwise
+↑ / ↓  - Sweep probe along its face
+← / →  - Slide probe across its face
+m / n  - Press / release probe normal to the face
+j / k  - Rotate probe footprint
+q / e  - Rock probe side-to-side
+t / g  - Tilt probe heel-toe
 [  - Decrease scan depth  (-10 mm)
 ]  - Increase scan depth  (+10 mm)
 ,  - Decrease probe frequency (-0.5 MHz)
@@ -23,6 +21,7 @@ import argparse
 import os
 import sys
 import tomllib
+import threading
 
 import cv2
 import json
@@ -30,6 +29,10 @@ import numpy as np
 import genesis as gs
 import genesis.utils.geom as gu
 from genesis.vis.keybindings import Key, KeyAction, Keybind
+
+import socket
+import struct
+
 from i4h_asset_helper.assets import (
     _get_s3_client, _S3_BUCKETS, _get_asset_env,
     get_i4h_local_asset_path, get_i4h_asset_hash, get_i4h_asset_version,
@@ -110,6 +113,29 @@ def _quat_wxyz_to_euler_xyz(quat_wxyz):
 # --- raysim world setup ------------------------------------------------------
 
 PROBE_TCP_OFFSET_M = np.array(_CFG["sensor"]["tcp_offset_m"])
+_IMU_IK_EULER_DEG  = tuple(_CFG["sensor"].get("imu_ik_euler_deg", [0, 0, 0]))
+
+
+def _probe_control_axes():
+    press_axis = PROBE_TCP_OFFSET_M.astype(np.float64)
+    press_norm = np.linalg.norm(press_axis)
+    if press_norm < 1e-9:
+        press_axis = np.array([0.0, 0.0, 1.0])
+    else:
+        press_axis /= press_norm
+
+    slide_axis = np.array([1.0, 0.0, 0.0])
+    if abs(float(np.dot(slide_axis, press_axis))) > 0.95:
+        slide_axis = np.array([0.0, 1.0, 0.0])
+    slide_axis = slide_axis - press_axis * np.dot(slide_axis, press_axis)
+    slide_axis /= np.linalg.norm(slide_axis)
+
+    sweep_axis = np.cross(press_axis, slide_axis)
+    sweep_axis /= np.linalg.norm(sweep_axis)
+    return slide_axis, sweep_axis, press_axis
+
+
+PROBE_SLIDE_AXIS, PROBE_SWEEP_AXIS, PROBE_PRESS_AXIS = _probe_control_axes()
 
 def _euler_deg_to_R(ex, ey, ez):
     rx, ry, rz = np.radians(ex), np.radians(ey), np.radians(ez)
@@ -153,6 +179,29 @@ def main():
     args = parser.parse_args()
 
     local_dir = get_i4h_local_asset_path()
+
+    # --- ROS 2 IMU listener setup ---
+    latest_imu_q = np.array([1.0, 0.0, 0.0, 0.0]) # w, x, y, z (identity)
+    imu_lock = threading.Lock()
+
+    def udp_listener_thread():
+        nonlocal latest_imu_q
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(('127.0.0.1', 12345))
+        while True:
+            try:
+                data, addr = sock.recvfrom(32)
+                if len(data) == 32:
+                    w, x, y, z = struct.unpack('4d', data)
+                    with imu_lock:
+                        latest_imu_q = np.array([w, x, y, z])
+            except Exception:
+                time.sleep(0.01)
+
+    spin_thread = threading.Thread(target=udp_listener_thread, daemon=True)
+    spin_thread.start()
+    print("[UDP Listener] Started on 127.0.0.1:12345. Target orientation will track relayed IMU data.")
 
     # Download Franka robot asset if not already present
     assets_dir = os.path.join(_REPO_ROOT, "assets")
@@ -337,12 +386,12 @@ def main():
         rs_probe_template.set_frequency(probe_freq_mhz[0])
         print(f"\rUS freq: {probe_freq_mhz[0]:.1f} MHz    ", end="", flush=True)
 
-    def move(delta):
-        target_pos[:] += np.array(delta, dtype=gs.np_float)
+    def move_probe(local_delta):
+        target_pos[:] += gu.quat_to_R(target_quat) @ np.array(local_delta, dtype=gs.np_float)
 
-    def rotate(delta):
+    def rotate_probe(local_axis, delta):
         target_quat[:] = gu.transform_quat_by_quat(
-            target_quat, gu.xyz_to_quat(np.array([0, 0, delta]))
+            target_quat, gu.xyz_to_quat(np.array(local_axis, dtype=gs.np_float) * delta)
         )
 
     def change_depth(delta):
@@ -357,14 +406,18 @@ def main():
         is_running = False
 
     scene.viewer.register_keybinds(
-        Keybind("move_forward",  Key.UP,            KeyAction.HOLD,    callback=move,         args=((-dpos, 0, 0),)),
-        Keybind("move_back",     Key.DOWN,           KeyAction.HOLD,    callback=move,         args=((dpos, 0, 0),)),
-        Keybind("move_left",     Key.LEFT,           KeyAction.HOLD,    callback=move,         args=((0, -dpos, 0),)),
-        Keybind("move_right",    Key.RIGHT,          KeyAction.HOLD,    callback=move,         args=((0, dpos, 0),)),
-        Keybind("move_up",       Key.N,              KeyAction.HOLD,    callback=move,         args=((0, 0, dpos),)),
-        Keybind("move_down",     Key.M,              KeyAction.HOLD,    callback=move,         args=((0, 0, -dpos),)),
-        Keybind("rotate_ccw",    Key.J,              KeyAction.HOLD,    callback=rotate,       args=(drot,)),
-        Keybind("rotate_cw",     Key.K,              KeyAction.HOLD,    callback=rotate,       args=(-drot,)),
+        Keybind("probe_sweep_forward", Key.UP,            KeyAction.HOLD,    callback=move_probe,   args=(PROBE_SWEEP_AXIS * dpos,)),
+        Keybind("probe_sweep_back",    Key.DOWN,          KeyAction.HOLD,    callback=move_probe,   args=(-PROBE_SWEEP_AXIS * dpos,)),
+        Keybind("probe_slide_left",    Key.LEFT,          KeyAction.HOLD,    callback=move_probe,   args=(-PROBE_SLIDE_AXIS * dpos,)),
+        Keybind("probe_slide_right",   Key.RIGHT,         KeyAction.HOLD,    callback=move_probe,   args=(PROBE_SLIDE_AXIS * dpos,)),
+        Keybind("probe_release",       Key.N,             KeyAction.HOLD,    callback=move_probe,   args=(-PROBE_PRESS_AXIS * dpos,)),
+        Keybind("probe_press",         Key.M,             KeyAction.HOLD,    callback=move_probe,   args=(PROBE_PRESS_AXIS * dpos,)),
+        Keybind("probe_rotate_ccw",    Key.J,             KeyAction.HOLD,    callback=rotate_probe, args=(PROBE_PRESS_AXIS, drot)),
+        Keybind("probe_rotate_cw",     Key.K,             KeyAction.HOLD,    callback=rotate_probe, args=(PROBE_PRESS_AXIS, -drot)),
+        Keybind("probe_rock_left",     Key.Q,             KeyAction.HOLD,    callback=rotate_probe, args=(PROBE_SWEEP_AXIS, drot)),
+        Keybind("probe_rock_right",    Key.E,             KeyAction.HOLD,    callback=rotate_probe, args=(PROBE_SWEEP_AXIS, -drot)),
+        Keybind("probe_tilt_up",       Key.T,             KeyAction.HOLD,    callback=rotate_probe, args=(PROBE_SLIDE_AXIS, drot)),
+        Keybind("probe_tilt_down",     Key.G,             KeyAction.HOLD,    callback=rotate_probe, args=(PROBE_SLIDE_AXIS, -drot)),
         Keybind("depth_inc",     Key.BRACKETRIGHT,  KeyAction.RELEASE, callback=change_depth, args=(ddepth,)),
         Keybind("depth_dec",     Key.BRACKETLEFT,   KeyAction.RELEASE, callback=change_depth, args=(-ddepth,)),
         Keybind("freq_inc",      Key.PERIOD,         KeyAction.RELEASE, callback=change_freq,  args=(dfreq,)),
@@ -373,12 +426,20 @@ def main():
         Keybind("quit",          Key.ESCAPE,         KeyAction.RELEASE, callback=stop),
     )
 
+    imu_ik_shift_q = gu.R_to_quat(_euler_deg_to_R(*_IMU_IK_EULER_DEG))
+
     # --- Simulation loop ------------------------------------------------------
     _us_step = 0
     US_EVERY  = 10
 
     try:
         while is_running:
+            with imu_lock:
+                current_imu_q = latest_imu_q.copy()
+            
+            shifted_imu_q = gu.transform_quat_by_quat(current_imu_q, imu_ik_shift_q)
+            target_quat[:] = gu.transform_quat_by_quat(robot_init_quat, shifted_imu_q)
+
             target.set_qpos(np.concatenate([target_pos, target_quat]))
             q, _ = robot.inverse_kinematics(
                 link=ee_link, pos=target_pos, quat=target_quat, return_error=True

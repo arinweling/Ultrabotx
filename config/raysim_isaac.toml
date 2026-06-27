@@ -38,3 +38,5 @@ orient_euler_deg = [-90, 0, 90]
 [sensor]
 # Offset from probe link origin to transducer face in probe-local frame (metres)
 tcp_offset_m = [0.0, 0.032, 0.0]
+# Orientation shift applied to the IMU feed for the IK conversion (degrees)
+imu_ik_euler_deg = [0, 0, 0]
