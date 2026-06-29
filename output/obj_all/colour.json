@@ -1,0 +1,497 @@
+{
+  "liver.obj": [
+    0.5,
+    0.08,
+    0.08
+  ],
+  "spleen.obj": [
+    0.45,
+    0.08,
+    0.18
+  ],
+  "pancreas.obj": [
+    0.9,
+    0.6,
+    0.55
+  ],
+  "right_kidney.obj": [
+    0.5,
+    0.08,
+    0.08
+  ],
+  "aorta.obj": [
+    0.7,
+    0.05,
+    0.05
+  ],
+  "inferior_vena_cava.obj": [
+    0.55,
+    0.03,
+    0.08
+  ],
+  "right_adrenal_gland.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "left_adrenal_gland.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "gallbladder.obj": [
+    0.4,
+    0.62,
+    0.1
+  ],
+  "esophagus.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "stomach.obj": [
+    0.82,
+    0.55,
+    0.5
+  ],
+  "duodenum.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "left_kidney.obj": [
+    0.5,
+    0.08,
+    0.08
+  ],
+  "bladder.obj": [
+    0.4,
+    0.62,
+    0.1
+  ],
+  "portal_vein_and_splenic_vein.obj": [
+    0.55,
+    0.03,
+    0.08
+  ],
+  "rectum.obj": [
+    0.78,
+    0.48,
+    0.38
+  ],
+  "small_bowel.obj": [
+    0.88,
+    0.68,
+    0.58
+  ],
+  "left_lung_upper_lobe.obj": [
+    0.9,
+    0.7,
+    0.65
+  ],
+  "left_lung_lower_lobe.obj": [
+    0.9,
+    0.7,
+    0.65
+  ],
+  "right_lung_middle_lobe.obj": [
+    0.9,
+    0.7,
+    0.65
+  ],
+  "right_lung_lower_lobe.obj": [
+    0.9,
+    0.7,
+    0.65
+  ],
+  "vertebrae_L5.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "vertebrae_L4.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "vertebrae_L3.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "vertebrae_L2.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "vertebrae_L1.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "vertebrae_T12.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "vertebrae_T11.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "vertebrae_T10.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "vertebrae_T9.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "vertebrae_T8.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "left_iliac_artery.obj": [
+    0.55,
+    0.03,
+    0.08
+  ],
+  "right_iliac_artery.obj": [
+    0.55,
+    0.03,
+    0.08
+  ],
+  "left_iliac_vena.obj": [
+    0.55,
+    0.03,
+    0.08
+  ],
+  "right_iliac_vena.obj": [
+    0.55,
+    0.03,
+    0.08
+  ],
+  "colon.obj": [
+    0.8,
+    0.5,
+    0.4
+  ],
+  "left_rib_6.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "left_rib_7.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "left_rib_8.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "left_rib_9.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "left_rib_10.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "left_rib_11.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "left_rib_12.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "right_rib_6.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "right_rib_7.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "right_rib_8.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "right_rib_9.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "right_rib_10.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "right_rib_11.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "right_rib_12.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "left_femur.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "right_femur.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "left_hip.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "right_hip.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "sacrum.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "left_gluteus_maximus.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "right_gluteus_maximus.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "left_gluteus_medius.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "right_gluteus_medius.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "left_gluteus_minimus.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "right_gluteus_minimus.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "left_autochthon.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "right_autochthon.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "left_iliopsoas.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "right_iliopsoas.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "costal_cartilages.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "heart.obj": [
+    0.85,
+    0.08,
+    0.08
+  ],
+  "prostate.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "pulmonary_vein.obj": [
+    0.55,
+    0.03,
+    0.08
+  ],
+  "spinal_cord.obj": [
+    0.85,
+    0.82,
+    0.6
+  ],
+  "sternum.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "superior_vena_cava.obj": [
+    0.55,
+    0.03,
+    0.08
+  ],
+  "vertebrae_S1.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "bone_lesion.obj": [
+    0.92,
+    0.88,
+    0.78
+  ],
+  "intervertebral_discs.obj": [
+    0.8,
+    0.75,
+    0.6
+  ],
+  "left_lung.obj": [
+    0.9,
+    0.7,
+    0.65
+  ],
+  "right_lung.obj": [
+    0.9,
+    0.7,
+    0.65
+  ],
+  "prostate_transitional_zone.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "white_matter_hyperintensity.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "right_atrium.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "left_ventricle_myocardium.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "muscles.obj": [
+    0.55,
+    0.1,
+    0.1
+  ],
+  "fat.obj": [
+    0.95,
+    0.9,
+    0.4
+  ],
+  "abdominal_tissue.obj": [
+    0.75,
+    0.65,
+    0.55
+  ],
+  "mediastinal_tissue.obj": [
+    0.7,
+    0.6,
+    0.55
+  ],
+  "skin.obj": [
+    0.88,
+    0.72,
+    0.58
+  ],
+  "heart_tissue.obj": [
+    0.8,
+    0.1,
+    0.1
+  ],
+  "pulmonary_artery.obj": [
+    0.55,
+    0.03,
+    0.08
+  ],
+  "left_eye.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "oral_cavity.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "left_parotid.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "larynx.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "Right-Cerebellum-Exterior.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "Right-Cerebral-White-Matter.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "Cerebellar-Vermal-Lobules-VIII-X.obj": [
+    0.6,
+    0.12,
+    0.12
+  ],
+  "Right-MOG---middle-occipital-gyrus.obj": [
+    0.68,
+    0.68,
+    0.75
+  ],
+  "Right-PCgG--posterior-cingulate-gyrus.obj": [
+    0.68,
+    0.68,
+    0.75
+  ],
+  "Left-SFG---superior-frontal-gyrus.obj": [
+    0.68,
+    0.68,
+    0.75
+  ],
+  "Right-TMP---temporal-pole.obj": [
+    0.68,
+    0.68,
+    0.75
+  ]
+}
