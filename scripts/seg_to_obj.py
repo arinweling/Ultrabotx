@@ -1,9 +1,9 @@
 """
 Convert a NV-Segment-CTMR segmentation NIfTI to per-label OBJ meshes for raysim.
 
-Uses the VTK pipeline (vtkDiscreteFlyingEdges3D + Windowed Sinc smoothing +
-vtkQuadricDecimation + vtkPolyDataNormals) — same quality as the i4h-workflows
-CT_to_USD converter, but outputs individual OBJs with raysim acoustic materials.
+Uses the VTK pipeline (vtkDiscreteFlyingEdges3D + CleanPolyData + LargestRegion +
+Windowed Sinc smoothing + vtkQuadricDecimation + CleanPolyData + FillHoles +
+vtkPolyDataNormals) — outputs individual OBJs with raysim acoustic materials.
 
 Usage (genesis conda env):
     conda run -n genesis python scripts/seg_to_obj.py \
@@ -98,8 +98,8 @@ def sanitize_filename(name: str) -> str:
 
 def label_to_mesh_vtk(reader, label_idx: int, smooth_factor: float, reduction: float) -> vtk.vtkPolyData | None:
     """
-    VTK pipeline: FlyingEdges -> Windowed Sinc smooth -> Quadric decimate
-                  -> Normals -> SForm transform -> RAS-to-LPS.
+    VTK pipeline: FlyingEdges -> Clean -> LargestComponent -> Windowed Sinc
+                  -> Decimate -> Clean -> FillHoles -> Normals -> RAS-to-LPS.
     Returns vtkPolyData or None if the label produces no geometry.
     """
     # Surface extraction
@@ -113,16 +113,36 @@ def label_to_mesh_vtk(reader, label_idx: int, smooth_factor: float, reduction: f
     if flying_edges.GetOutput().GetNumberOfPoints() == 0:
         return None
 
-    # Windowed Sinc smoothing — volume-preserving, feature-preserving
+    # Merge coincident points and remove degenerate triangles from voxel surface.
+    # FlyingEdges leaves duplicate vertices at shared voxel faces — without this
+    # step, every subsequent filter sees a non-manifold soup and breaks.
+    clean1 = vtk.vtkCleanPolyData()
+    clean1.SetInputConnection(flying_edges.GetOutputPort())
+    clean1.PointMergingOn()
+    clean1.Update()
+
+    if clean1.GetOutput().GetNumberOfPoints() == 0:
+        return None
+
+    # Keep only the largest connected component — eliminates floating noise
+    # islands that segmentation produces for small, isolated voxel clusters.
+    connectivity = vtk.vtkPolyDataConnectivityFilter()
+    connectivity.SetInputConnection(clean1.GetOutputPort())
+    connectivity.SetExtractionModeToLargestRegion()
+    connectivity.Update()
+
+    # Windowed Sinc smoothing removes staircase voxel artifacts while
+    # preserving volume. passband ~ 0.1 at default (not 0.01 — that over-smooths).
+    # NonManifoldSmoothing is off: it worsens butterfly artifacts at voxel corners.
     n_iter   = int(20 + smooth_factor * 40)
-    passband = pow(10.0, -4.0 * smooth_factor)
+    passband = max(0.001, pow(10.0, -2.0 * smooth_factor))
     smoother = vtk.vtkWindowedSincPolyDataFilter()
-    smoother.SetInputConnection(flying_edges.GetOutputPort())
+    smoother.SetInputConnection(connectivity.GetOutputPort())
     smoother.SetNumberOfIterations(n_iter)
     smoother.SetPassBand(passband)
     smoother.BoundarySmoothingOff()
     smoother.FeatureEdgeSmoothingOff()
-    smoother.NonManifoldSmoothingOn()
+    smoother.NonManifoldSmoothingOff()
     smoother.NormalizeCoordinatesOn()
     smoother.Update()
 
@@ -133,25 +153,32 @@ def label_to_mesh_vtk(reader, label_idx: int, smooth_factor: float, reduction: f
     decimation.VolumePreservationOn()
     decimation.Update()
 
-    # Smooth, consistent normals
+    # Clean after decimation — quadric decimation can produce zero-area triangles
+    # at high reduction rates that cause rendering artifacts and broken topology.
+    clean2 = vtk.vtkCleanPolyData()
+    clean2.SetInputConnection(decimation.GetOutputPort())
+    clean2.PointMergingOn()
+    clean2.Update()
+
+    # Close small holes torn by decimation (e.g. in thin structures like vessels)
+    fill_holes = vtk.vtkFillHolesFilter()
+    fill_holes.SetInputConnection(clean2.GetOutputPort())
+    fill_holes.SetHoleSize(100.0)
+    fill_holes.Update()
+
+    # Consistent normals, auto-oriented outward. Without AutoOrientNormals, inward-
+    # pointing patches appear invisible in one-sided rendering ("half broken").
     normals = vtk.vtkPolyDataNormals()
-    normals.SetInputConnection(decimation.GetOutputPort())
+    normals.SetInputConnection(fill_holes.GetOutputPort())
     normals.SplittingOff()
     normals.ConsistencyOn()
+    normals.AutoOrientNormalsOn()
+    normals.ComputePointNormalsOn()
     normals.Update()
 
-    # Apply NIfTI SForm matrix (voxel -> world mm)
-    sform = reader.GetSFormMatrix()
-    if sform is None or sform.IsIdentity():
-        sform = vtk.vtkMatrix4x4()
-    sform_transform = vtk.vtkTransform()
-    sform_transform.SetMatrix(sform)
-    world_transformer = vtk.vtkTransformPolyDataFilter()
-    world_transformer.SetTransform(sform_transform)
-    world_transformer.SetInputConnection(normals.GetOutputPort())
-    world_transformer.Update()
-
-    # RAS -> LPS (flip X and Y — matches existing ABDPhantom OBJ convention)
+    # vtkNIFTIImageReader already applies DataSpacing and DataOrigin to the image
+    # data, so FlyingEdges output is in physical mm. Applying SForm on top would
+    # square the voxel spacing. Only flip RAS→LPS (matches ABDPhantom OBJ convention).
     ras2lps_mat = vtk.vtkMatrix4x4()
     ras2lps_mat.SetElement(0, 0, -1)
     ras2lps_mat.SetElement(1, 1, -1)
@@ -159,7 +186,7 @@ def label_to_mesh_vtk(reader, label_idx: int, smooth_factor: float, reduction: f
     ras2lps.SetMatrix(ras2lps_mat)
     lps_transformer = vtk.vtkTransformPolyDataFilter()
     lps_transformer.SetTransform(ras2lps)
-    lps_transformer.SetInputConnection(world_transformer.GetOutputPort())
+    lps_transformer.SetInputConnection(normals.GetOutputPort())
     lps_transformer.Update()
 
     return lps_transformer.GetOutput()
@@ -175,8 +202,8 @@ def main():
                         help="Skip labels with fewer voxels (noise filter)")
     parser.add_argument("--smooth_factor", type=float, default=0.5,
                         help="Windowed Sinc smoothing strength 0-1 (0=off, 1=max)")
-    parser.add_argument("--reduction", type=float, default=0.9,
-                        help="Quadric decimation target reduction 0-1 (0.9 = 90%% fewer faces)")
+    parser.add_argument("--reduction", type=float, default=0.7,
+                        help="Quadric decimation target reduction 0-1 (0.7 = 70%% fewer faces)")
     parser.add_argument("--metadata", default=str(_META_PATH))
     args = parser.parse_args()
 
@@ -193,8 +220,16 @@ def main():
     reader.SetFileName(args.seg)
     reader.Update()
 
-    # Get unique labels via numpy
-    scalars = vtk_to_numpy(reader.GetOutput().GetPointData().GetScalars()).astype(np.int32)
+    # Get unique labels via numpy.
+    # GetScalars() can return None when the NIfTI reader stores data under a named
+    # array rather than the active-scalar slot — fall back to GetArray(0).
+    point_data = reader.GetOutput().GetPointData()
+    scalars_vtk = point_data.GetScalars()
+    if scalars_vtk is None:
+        scalars_vtk = point_data.GetArray(0)
+    if scalars_vtk is None:
+        raise RuntimeError(f"No scalar data found in {args.seg} — check the file is a valid NIfTI segmentation.")
+    scalars = vtk_to_numpy(scalars_vtk).astype(np.int32)
     unique_labels = sorted(set(scalars.tolist()) - {0})
     print(f"Found {len(unique_labels)} non-background labels\n")
 
