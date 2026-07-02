@@ -130,14 +130,14 @@ else
 fi
 
 # ── i4h asset helper ──────────────────────────────────────────────────────────
-section "i4h asset helper"
-CATALOG_DIR="$REPO_DIR/i4h-asset-catalog"
-if conda run -n "$ENV_NAME" python -c "from i4h_asset_helper.assets import get_i4h_local_asset_path" >/dev/null 2>&1; then
-    info "i4h_asset_helper already installed"
-else
-    info "Installing i4h_asset_helper..."
-    "$ENV_PIP" install -e "$CATALOG_DIR"
-fi
+# section "i4h asset helper"
+# CATALOG_DIR="$REPO_DIR/i4h-asset-catalog"
+# if conda run -n "$ENV_NAME" python -c "from i4h_asset_helper.assets import get_i4h_local_asset_path" >/dev/null 2>&1; then
+#     info "i4h_asset_helper already installed"
+# else
+#     info "Installing i4h_asset_helper..."
+#     "$ENV_PIP" install -e "$CATALOG_DIR"
+# fi
 
 # ── raysim (OptiX ultrasound simulator) ───────────────────────────────────────
 section "raysim (NVIDIA OptiX ultrasound simulator)"

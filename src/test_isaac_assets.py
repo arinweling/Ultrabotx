@@ -33,10 +33,10 @@ from genesis.vis.keybindings import Key, KeyAction, Keybind
 import socket
 import struct
 
-from i4h_asset_helper.assets import (
-    _get_s3_client, _S3_BUCKETS, _get_asset_env,
-    get_i4h_local_asset_path, get_i4h_asset_hash, get_i4h_asset_version,
-)
+# from i4h_asset_helper.assets import (
+#     _get_s3_client, _S3_BUCKETS, _get_asset_env,
+#     get_i4h_local_asset_path, get_i4h_asset_hash, get_i4h_asset_version,
+# )
 
 _REPO_ROOT   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _CONFIG_PATH = os.path.join(_REPO_ROOT, "config", "raysim_isaac.toml")
@@ -82,22 +82,22 @@ def _load_organ_config(obj_dir: str):
 
 # --- Asset download -----------------------------------------------------------
 
-def _download_asset(sub_path: str, local_dir: str) -> None:
-    """Download all files under sub_path from S3 if not already present."""
-    bucket   = _S3_BUCKETS[_get_asset_env()]
-    ver      = get_i4h_asset_version()
-    h        = get_i4h_asset_hash(version=ver)
-    prefix   = f"Assets/Isaac/Healthcare/{ver}/{h}/"
-    s3       = _get_s3_client()
-    paginator = s3.get_paginator("list_objects_v2")
-    for page in paginator.paginate(Bucket=bucket, Prefix=prefix + sub_path):
-        for obj in page.get("Contents", []):
-            rel  = obj["Key"][len(prefix):]
-            dest = os.path.join(local_dir, rel)
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            if not os.path.exists(dest):
-                print(f"  Downloading {rel}")
-                s3.download_file(bucket, obj["Key"], dest)
+# def _download_asset(sub_path: str, local_dir: str) -> None:
+#     """Download all files under sub_path from S3 if not already present."""
+#     bucket   = _S3_BUCKETS[_get_asset_env()]
+#     ver      = get_i4h_asset_version()
+#     h        = get_i4h_asset_hash(version=ver)
+#     prefix   = f"Assets/Isaac/Healthcare/{ver}/{h}/"
+#     s3       = _get_s3_client()
+#     paginator = s3.get_paginator("list_objects_v2")
+#     for page in paginator.paginate(Bucket=bucket, Prefix=prefix + sub_path):
+#         for obj in page.get("Contents", []):
+#             rel  = obj["Key"][len(prefix):]
+#             dest = os.path.join(local_dir, rel)
+#             os.makedirs(os.path.dirname(dest), exist_ok=True)
+#             if not os.path.exists(dest):
+#                 print(f"  Downloading {rel}")
+#                 s3.download_file(bucket, obj["Key"], dest)
 
 
 # --- Coordinate helpers ------------------------------------------------------
@@ -178,7 +178,7 @@ def main():
                         help="Comma-separated substrings: only load organs whose filename matches any (e.g. 'lung')")
     args = parser.parse_args()
 
-    local_dir = get_i4h_local_asset_path()
+    # local_dir = get_i4h_local_asset_path()
 
     # --- ROS 2 IMU listener setup ---
     latest_imu_q = np.array([1.0, 0.0, 0.0, 0.0]) # w, x, y, z (identity)
@@ -203,10 +203,10 @@ def main():
     spin_thread.start()
     print("[UDP Listener] Started on 127.0.0.1:12345. Target orientation will track relayed IMU data.")
 
-    # Download Franka robot asset if not already present
-    assets_dir = os.path.join(_REPO_ROOT, "assets")
-    print("Downloading required assets...")
-    _download_asset("Robots/Franka/", assets_dir)
+    # # Download Franka robot asset if not already present
+    # assets_dir = os.path.join(_REPO_ROOT, "assets")
+    # print("Downloading required assets...")
+    # _download_asset("Robots/Franka/", assets_dir)
     
     robot_usd_path = os.path.join(_REPO_ROOT, "assets", "data", "Robots", "Franka", "fr3_US.usd")
 
@@ -309,12 +309,12 @@ def main():
     )
     print(f"Robot USD loaded: {robot_usd_path}")
 
-    # Phantom outer skin
-    phantom_path = os.path.join(local_dir, "Props", "ABDPhantom", "phantom.usda")
-    # scene.add_stage(
-    #     gs.morphs.USD(file=phantom_path, pos=PHANTOM_POS_M, euler=(0, 0, 180), fixed=True)
-    # )
-    print("Loaded phantom skin (USD)")
+    # # Phantom outer skin
+    # phantom_path = os.path.join(local_dir, "Props", "ABDPhantom", "phantom.usda")
+    # # scene.add_stage(
+    # #     gs.morphs.USD(file=phantom_path, pos=PHANTOM_POS_M, euler=(0, 0, 180), fixed=True)
+    # # )
+    # print("Loaded phantom skin (USD)")
 
     # Individual organs
     n_loaded = 0

@@ -131,18 +131,15 @@ def label_to_mesh_vtk(reader, label_idx: int, smooth_factor: float, reduction: f
     connectivity.SetExtractionModeToLargestRegion()
     connectivity.Update()
 
-    # Windowed Sinc smoothing removes staircase voxel artifacts while
-    # preserving volume. passband ~ 0.1 at default (not 0.01 — that over-smooths).
-    # NonManifoldSmoothing is off: it worsens butterfly artifacts at voxel corners.
     n_iter   = int(20 + smooth_factor * 40)
-    passband = max(0.001, pow(10.0, -2.0 * smooth_factor))
+    passband = pow(10.0, -4.0 * smooth_factor)
     smoother = vtk.vtkWindowedSincPolyDataFilter()
     smoother.SetInputConnection(connectivity.GetOutputPort())
     smoother.SetNumberOfIterations(n_iter)
     smoother.SetPassBand(passband)
     smoother.BoundarySmoothingOff()
     smoother.FeatureEdgeSmoothingOff()
-    smoother.NonManifoldSmoothingOff()
+    smoother.NonManifoldSmoothingOn()
     smoother.NormalizeCoordinatesOn()
     smoother.Update()
 
@@ -220,6 +217,16 @@ def main():
     reader.SetFileName(args.seg)
     reader.Update()
 
+    # Pad the volume by 2 voxels on every side with background (0).
+    # Organs touching the image boundary otherwise produce open/broken meshes
+    # because FlyingEdges has no surface to close against.
+    ext = reader.GetOutput().GetExtent()
+    padder = vtk.vtkImageConstantPad()
+    padder.SetInputConnection(reader.GetOutputPort())
+    padder.SetOutputWholeExtent(ext[0]-2, ext[1]+2, ext[2]-2, ext[3]+2, ext[4]-2, ext[5]+2)
+    padder.SetConstant(0)
+    padder.Update()
+
     # Get unique labels via numpy.
     # GetScalars() can return None when the NIfTI reader stores data under a named
     # array rather than the active-scalar slot — fall back to GetArray(0).
@@ -248,7 +255,7 @@ def main():
         out_path = os.path.join(args.out_dir, fname)
 
         try:
-            polydata = label_to_mesh_vtk(reader, label_idx, args.smooth_factor, args.reduction)
+            polydata = label_to_mesh_vtk(padder, label_idx, args.smooth_factor, args.reduction)
             if polydata is None or polydata.GetNumberOfPoints() == 0:
                 print(f"  empty {label_idx:3d} {name} — skipping")
                 continue
