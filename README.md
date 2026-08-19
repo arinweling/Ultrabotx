@@ -7,7 +7,6 @@ Teleoperable Franka Panda robot arm in [Genesis](https://github.com/Genesis-Embo
 https://github.com/user-attachments/assets/798cf530-abfe-49bd-858c-fa269113867a
 
 
-https://github.com/user-attachments/assets/56157d4c-f88d-4a47-b10c-1672e9d224d1
 
 
 ## What it does
